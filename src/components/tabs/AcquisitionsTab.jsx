@@ -3,13 +3,14 @@ import { PALETTE } from "../../data/palette.js";
 import { ACQUISITION_POOL } from "../../data/acquisitions.js";
 import { BANKS } from "../../data/banks.js";
 import { DD_CATEGORIES, DD_BUDGET } from "../../data/duediligence.js";
+import { THESES } from "../../data/thesis.js";
 
 const MAX_ADD_ONS = 2;
 
 export default function AcquisitionsTab({
   isDirectorial, staff, acquisitionSlots, expandedCompanyId, setExpandedCompanyId,
   proposalChoices, pickProposal, passOn, selectedProposal, bankRejections, requestFinancing,
-  portfolio, quarter, dryPowder, addBoltOn, ddResults, investigateDD,
+  portfolio, quarter, dryPowder, addBoltOn, ddResults, investigateDD, selectedThesis, chooseThesis,
 }) {
   return (
     <div>
@@ -24,7 +25,9 @@ export default function AcquisitionsTab({
           const selectedOptionId = isDirectorial ? selectedProposal[c.id] : null;
           const rejections = bankRejections[c.id] || [];
           const investedEntry = chosen ? portfolio.find((p) => p.id === c.id) : null;
-          const awaitingBank = isDirectorial && selectedOptionId && !chosen;
+          const chosenThesis = selectedThesis[c.id];
+          const awaitingThesis = isDirectorial && selectedOptionId && !chosenThesis && !chosen;
+          const awaitingBank = isDirectorial && selectedOptionId && chosenThesis && !chosen;
           return (
             <div key={c.id} className="p-4 rounded" style={{ backgroundColor: PALETTE.panel, border: `1px solid ${PALETTE.line}` }}>
               <p className="text-sm mb-1" style={{ fontFamily: "'Fraunces', serif", fontWeight: 600 }}>{c.name}</p>
@@ -78,8 +81,20 @@ export default function AcquisitionsTab({
                       );
                     })}
                   </div>
+                  {awaitingThesis && (
+                    <div className="mt-3 pt-3 flex flex-col gap-2" style={{ borderTop: `1px solid ${PALETTE.line}` }}>
+                      <p style={{ color: PALETTE.textMuted }}>Formuler votre thèse d'investissement :</p>
+                      {THESES.map((t) => (
+                        <button key={t.key} onClick={() => chooseThesis(idx, t.key)} className="text-left p-2 rounded" style={{ backgroundColor: PALETTE.panel, border: `1px solid ${PALETTE.line}` }}>
+                          <p style={{ fontWeight: 600 }}>{t.label}</p>
+                          <p className="mt-0.5" style={{ color: PALETTE.textMuted }}>{t.description}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {awaitingBank && (
                     <div className="mt-3 pt-3 flex flex-col gap-2" style={{ borderTop: `1px solid ${PALETTE.line}` }}>
+                      <p style={{ color: PALETTE.gold }}>Thèse retenue : {THESES.find((t) => t.key === chosenThesis)?.label}</p>
                       <p style={{ color: PALETTE.textMuted }}>Solliciter une banque pour financer la dette :</p>
                       {BANKS.map((bank) => {
                         const wasRejected = rejections.includes(bank.id);
@@ -119,6 +134,14 @@ export default function AcquisitionsTab({
                 <span className="text-xs flex items-center gap-1" style={{ color: delta >= 0 ? PALETTE.teal : PALETTE.crimson, fontFamily: "'IBM Plex Mono', monospace" }}>{delta >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />} {p.value} M$</span>
               </div>
               {p.bankName && <p className="text-xs mt-0.5" style={{ color: PALETTE.textMuted }}>Financé via {p.bankName}</p>}
+              {p.thesis && (
+                <p className="text-xs mt-0.5" style={{ color: p.thesisOutcome === "correct" ? PALETTE.teal : p.thesisOutcome === "incorrect" ? PALETTE.crimson : PALETTE.textMuted }}>
+                  Thèse : {THESES.find((t) => t.key === p.thesis)?.label}
+                  {p.thesisOutcome === "correct" && " — validée"}
+                  {p.thesisOutcome === "incorrect" && " — invalidée"}
+                  {!p.thesisOutcome && " — en attente"}
+                </p>
+              )}
               <div className="mt-1.5">
                 {pending && (
                   <span className="text-xs flex items-center gap-1" style={{ color: PALETTE.textMuted }}>

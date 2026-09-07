@@ -13,6 +13,7 @@ import { maybeGenerateCeoOffer } from "./data/ceo.js";
 import { FOUNDER_SEED_CAPITAL, attemptFundraise as attemptFundraiseRoll } from "./data/founder.js";
 import { POSTURES, computePlayerLeverage, computeFirmFlexibility, computeNegotiationRound, BAND_TEXTS } from "./data/negotiation.js";
 import { DD_BUDGET, investigateCategory } from "./data/duediligence.js";
+import { outcomeFromRisk } from "./data/thesis.js";
 import { getRankIndex, clamp, randInt } from "./lib/utils.js";
 import { loadSave, persistSave } from "./lib/storage.js";
 import { computeCareerProfile, computeEndgamePath } from "./lib/career.js";
@@ -74,6 +75,7 @@ export default function App() {
   const [selectedProposal, setSelectedProposal] = useState({});
   const [bankRejections, setBankRejections] = useState({});
   const [ddResults, setDdResults] = useState({});
+  const [selectedThesis, setSelectedThesis] = useState({});
 
   const [dryPowder, setDryPowder] = useState(40);
   const [loanLog, setLoanLog] = useState([]);
@@ -165,8 +167,15 @@ export default function App() {
     setSelectedProposal((p) => { const n = { ...p }; delete n[usedCompanyId]; return n; });
     setBankRejections((r) => { const n = { ...r }; delete n[usedCompanyId]; return n; });
     setDdResults((d) => { const n = { ...d }; delete n[usedCompanyId]; return n; });
+    setSelectedThesis((t) => { const n = { ...t }; delete n[usedCompanyId]; return n; });
   }
   function passOn(poolIdx) { cycleSlot(poolIdx); }
+
+  function chooseThesis(poolIdx, thesisKey) {
+    const company = ACQUISITION_POOL[poolIdx];
+    if (proposalChoices[company.id] || !selectedProposal[company.id]) return;
+    setSelectedThesis((t) => ({ ...t, [company.id]: thesisKey }));
+  }
 
   // Priorité 4 — due diligence à budget limité : investiguer la bonne catégorie donne une chance
   // de voir la description du risque cible avant d'investir, sans jamais garantir sa présence ni
@@ -238,7 +247,8 @@ export default function App() {
     const optionId = selectedProposal[company.id];
     const option = company.proposals.find((o) => o.id === optionId);
     const bank = BANKS.find((b) => b.id === bankId);
-    if (!option || !bank) return;
+    const thesis = selectedThesis[company.id];
+    if (!option || !bank || !thesis) return;
 
     // La réputation Banques et le track record de la firme (son score) desserrent ou resserrent
     // légèrement le plafond de levier officiel de chaque prêteur — une PE tout juste fondée, sans
@@ -270,7 +280,12 @@ export default function App() {
       return { ...f, corporateDebt: newDebt, debtWeightedRate: newRate, score: clamp(f.score + (option.correct ? 4 : -3), 5, 98) };
     }));
     const pendingRisk = rollHiddenRisk(company, option);
-    setPortfolio((p) => [...p, { id: company.id, name: company.name, invested: price, value: price, ebitda: company.ebitda, quarterAcquired: quarter, pendingRisk, resolvedRisk: null, bankName: bank.name }]);
+    // Une thèse "deal propre" se vérifie immédiatement quand aucun risque n'a été tiré — il n'y a
+    // rien à attendre. Les deux autres thèses restent en suspens jusqu'à la résolution du risque.
+    const immediateOutcome = pendingRisk ? null : outcomeFromRisk(null, 0);
+    const thesisOutcome = immediateOutcome ? (thesis === immediateOutcome ? "correct" : "incorrect") : null;
+    if (thesisOutcome === "correct") setSkills((s) => ({ ...s, dueDiligence: clamp(s.dueDiligence + 3, 0, 100) }));
+    setPortfolio((p) => [...p, { id: company.id, name: company.name, invested: price, value: price, ebitda: company.ebitda, quarterAcquired: quarter, pendingRisk, resolvedRisk: null, bankName: bank.name, thesis, thesisOutcome }]);
     setInvestedIds((ids) => [...ids, company.id]);
     setDealsReviewed((v) => v + 1);
     setLoanLog((l) => [{ id: `loan-${Date.now()}`, quarter, bankId: bank.id, bankName: bank.name, rate: bank.rate, amount: debt, purpose: company.name, rejected: false }, ...l]);
@@ -400,6 +415,7 @@ export default function App() {
     // portant un risque caché planifié est vérifiée — le résultat s'impose au moment prévu,
     // indépendamment de la qualité de l'analyse initiale.
     let firmScoreDelta = 0;
+    let thesisSkillBump = 0;
     setPortfolio((prev) => prev.map((pos) => {
       let updated = { ...pos, value: Math.max(1, Math.round(pos.value * (1 + randInt(-15, 15) / 100))) };
       if (pos.pendingRisk && !pos.resolvedRisk && q >= pos.pendingRisk.revealQuarter) {
@@ -407,9 +423,18 @@ export default function App() {
         newsItems.push(`T${q} — Risque caché révélé chez ${pos.name} : ${pos.pendingRisk.description}`);
         firmScoreDelta += pos.pendingRisk.scoreImpact;
         updated = { ...updated, value: impactedValue, resolvedRisk: { description: pos.pendingRisk.description } };
+        if (pos.thesis) {
+          const outcome = outcomeFromRisk(pos.pendingRisk, pos.pendingRisk.impactFraction);
+          const thesisOutcome = pos.thesis === outcome ? "correct" : "incorrect";
+          if (thesisOutcome === "correct") thesisSkillBump += 3;
+          updated.thesisOutcome = thesisOutcome;
+        }
       }
       return updated;
     }));
+    if (thesisSkillBump !== 0) {
+      setSkills((s) => ({ ...s, dueDiligence: clamp(s.dueDiligence + thesisSkillBump, 0, 100) }));
+    }
     if (firmScoreDelta !== 0) {
       setFirms((prev) => prev.map((f) => (f.id === currentFirmId ? { ...f, score: clamp(f.score + firmScoreDelta, 5, 98) } : f)));
     }
@@ -617,6 +642,7 @@ export default function App() {
             selectedProposal={selectedProposal} bankRejections={bankRejections} requestFinancing={requestFinancing}
             portfolio={portfolio} quarter={quarter} dryPowder={dryPowder} addBoltOn={addBoltOn}
             ddResults={ddResults} investigateDD={investigateDD}
+            selectedThesis={selectedThesis} chooseThesis={chooseThesis}
           />
         )}
 
