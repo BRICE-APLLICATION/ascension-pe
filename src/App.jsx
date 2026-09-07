@@ -10,6 +10,7 @@ import { SEED_MAIL } from "./data/mail.js";
 import { defaultSkills } from "./data/skills.js";
 import { defaultReputation } from "./data/reputation.js";
 import { maybeGenerateCeoOffer } from "./data/ceo.js";
+import { FOUNDER_SEED_CAPITAL, attemptFundraise as attemptFundraiseRoll } from "./data/founder.js";
 import { getRankIndex, clamp, randInt } from "./lib/utils.js";
 import { loadSave, persistSave } from "./lib/storage.js";
 import { computeCareerProfile } from "./lib/career.js";
@@ -24,6 +25,7 @@ import CasesTab from "./components/tabs/CasesTab.jsx";
 import AcquisitionsTab from "./components/tabs/AcquisitionsTab.jsx";
 import BankTab from "./components/tabs/BankTab.jsx";
 import FinancesTab from "./components/tabs/FinancesTab.jsx";
+import FounderTab from "./components/tabs/FounderTab.jsx";
 import CareerTab from "./components/tabs/CareerTab.jsx";
 import MarketTab from "./components/tabs/MarketTab.jsx";
 import JobsTab from "./components/tabs/JobsTab.jsx";
@@ -46,6 +48,9 @@ export default function App() {
   const [reputation, setReputation] = useState(defaultReputation());
   const [ceoFirmId, setCeoFirmId] = useState(null);
   const [lastCeoOfferQuarter, setLastCeoOfferQuarter] = useState(-99);
+  const [ownFirmId, setOwnFirmId] = useState(null);
+  const [lastFundraiseQuarter, setLastFundraiseQuarter] = useState(-99);
+  const [fundraiseResult, setFundraiseResult] = useState(null);
 
   const [firms, setFirms] = useState(FIRMS_INITIAL);
   const [currentFirmId, setCurrentFirmId] = useState(FIRM_ID);
@@ -97,14 +102,16 @@ export default function App() {
       if (s.reputation) setReputation(s.reputation);
       if (s.ceoFirmId !== undefined) setCeoFirmId(s.ceoFirmId);
       if (s.lastCeoOfferQuarter !== undefined) setLastCeoOfferQuarter(s.lastCeoOfferQuarter);
+      if (s.ownFirmId !== undefined) setOwnFirmId(s.ownFirmId);
+      if (s.lastFundraiseQuarter !== undefined) setLastFundraiseQuarter(s.lastFundraiseQuarter);
     }
     setLoaded(true);
   }, []);
 
   useEffect(() => {
     if (!loaded || !playerName) return;
-    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter });
-  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter]);
+    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter });
+  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter]);
 
   const rankIndex = getRankIndex(xp);
   const currentRank = RANKS[rankIndex];
@@ -115,6 +122,8 @@ export default function App() {
   const currentFirm = firms.find((f) => f.id === currentFirmId) || firms[0];
   const staff = getStaff(currentFirmId, rankIndex, firms);
   const isCeo = ceoFirmId === currentFirmId;
+  const isPartner = rankIndex === 4;
+  const ownFirm = ownFirmId ? firms.find((f) => f.id === ownFirmId) : null;
   const careerProfile = computeCareerProfile({ skills, reputation, xp, dealsReviewed, portfolio });
 
   const selectedScenario = SCENARIOS.find((s) => s.id === selectedScenarioId);
@@ -192,10 +201,10 @@ export default function App() {
     const bank = BANKS.find((b) => b.id === bankId);
     if (!option || !bank) return;
 
-    // La réputation Banques desserre ou resserre légèrement le plafond de levier officiel de
-    // chaque prêteur : un track record solide ouvre un peu plus de marge, un mauvais track
-    // record en ferme un peu.
-    const effectiveMaxLeverage = clamp(bank.maxLeverage + (reputation.banks - 50) / 500, 0.1, 0.98);
+    // La réputation Banques et le track record de la firme (son score) desserrent ou resserrent
+    // légèrement le plafond de levier officiel de chaque prêteur — une PE tout juste fondée, sans
+    // historique, se voit donc naturellement plus scrutée qu'un fonds établi.
+    const effectiveMaxLeverage = clamp(bank.maxLeverage + (reputation.banks - 50) / 500 + (currentFirm.score - 50) / 500, 0.1, 0.98);
     if (option.leverage > effectiveMaxLeverage) {
       setBankRejections((r) => ({ ...r, [company.id]: [...(r[company.id] || []), bankId] }));
       return;
@@ -388,6 +397,38 @@ export default function App() {
     }
   }
 
+  // Étape 3 — chemin Fondateur : quitter le parcours employé pour construire sa propre firme,
+  // financée d'abord sur capital personnel (voir FOUNDER_SEED_CAPITAL), puis par dette bancaire
+  // (le système multi-banques existant) et enfin par des levées de fonds auprès de LPs.
+  function foundOwnFirm() {
+    if (rankIndex !== 4 || ownFirmId) return;
+    if (isCeo) setCeoFirmId(null);
+    const id = `${playerName.toLowerCase().replace(/[^a-z]+/g, "-")}-capital`;
+    const name = `${playerName} Capital`;
+    const newFirm = { id, name, score: 40, employees: 3, public: false, corporateDebt: 0, lpCommitted: 0, cash: 1, fundsRaised: 0 };
+    setFirms((prev) => [...prev, newFirm]);
+    setCurrentFirmId(id);
+    setOwnFirmId(id);
+    setDryPowder(FOUNDER_SEED_CAPITAL);
+    setYear((y) => y + 1);
+    setCareerHistory((h) => [...h, { firmName: name, role: "Fondateur", year: year + 1 }]);
+    setNews((n) => [`T${quarter} — ${playerName} quitte pour fonder ${name}, financée sur capital personnel (${FOUNDER_SEED_CAPITAL} M$).`, ...n]);
+  }
+
+  function attemptFundraise() {
+    if (!ownFirm || currentFirmId !== ownFirmId || quarter <= lastFundraiseQuarter) return;
+    setLastFundraiseQuarter(quarter);
+    const result = attemptFundraiseRoll({ firm: ownFirm, reputation, careerProfile });
+    if (result.success) {
+      setFirms((prev) => prev.map((f) => (f.id === ownFirmId ? { ...f, lpCommitted: f.lpCommitted + result.raised, fundsRaised: f.fundsRaised + 1 } : f)));
+      setDryPowder((d) => +(d + result.raised).toFixed(1));
+      setNews((n) => [`T${quarter} — ${ownFirm.name} lève ${result.raised} M$ auprès de nouveaux LPs.`, ...n]);
+      setFundraiseResult({ success: true, message: `Levée réussie : ${result.raised} M$ engagés.` });
+    } else {
+      setFundraiseResult({ success: false, message: "Les LPs sollicités ne sont pas convaincus cette fois-ci — retentez votre chance dans quelques trimestres." });
+    }
+  }
+
   const marketSorted = [...firms].sort((a, b) => b.score - a.score);
   const playerPosition = marketSorted.findIndex((f) => f.id === currentFirmId) + 1;
   const grossTotal = careerHistory.reduce((sum, h) => { const r = getCompForRole(h.role); return sum + r.salary + r.bonus; }, 0);
@@ -406,12 +447,13 @@ export default function App() {
     setSelectedScenarioId(null);
     setApplicationResult(null);
     setViewingOfferId(null);
+    setFundraiseResult(null);
   }
 
   return (
     <div className="w-full min-h-screen flex flex-col" style={{ backgroundColor: PALETTE.bg, color: PALETTE.textPrimary, fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}>
-      <Header playerName={playerName} currentFirm={currentFirm} staff={staff} currentRank={currentRank} isCeo={isCeo} playerPosition={playerPosition} firmsCount={firms.length} quarter={quarter} advanceQuarter={advanceQuarter} />
-      <NavTabs tab={tab} onSelect={selectTab} isDirectorial={isDirectorial} />
+      <Header playerName={playerName} currentFirm={currentFirm} staff={staff} currentRank={currentRank} isCeo={isCeo} isFounder={currentFirmId === ownFirmId} playerPosition={playerPosition} firmsCount={firms.length} quarter={quarter} advanceQuarter={advanceQuarter} />
+      <NavTabs tab={tab} onSelect={selectTab} isDirectorial={isDirectorial} isPartner={isPartner} />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-6 py-8">
         {tab === "apercu" && (
@@ -446,10 +488,18 @@ export default function App() {
           <FinancesTab currentFirm={currentFirm} dryPowder={dryPowder} portfolio={portfolio} quarter={quarter} />
         )}
 
+        {tab === "founder" && isPartner && (
+          <FounderTab
+            playerName={playerName} ownFirmId={ownFirmId} ownFirm={ownFirm} currentFirmId={currentFirmId}
+            dryPowder={dryPowder} portfolio={portfolio} quarter={quarter} foundOwnFirm={foundOwnFirm}
+            attemptFundraise={attemptFundraise} fundraiseResult={fundraiseResult} lastFundraiseQuarter={lastFundraiseQuarter}
+          />
+        )}
+
         {tab === "carriere" && <CareerTab playerName={playerName} year={year} careerHistory={careerHistory} grossTotal={grossTotal} netTotal={netTotal} />}
 
         {tab === "marche" && (
-          <MarketTab marketSorted={marketSorted} currentFirm={currentFirm} currentFirmId={currentFirmId} rankIndex={rankIndex} goPublic={goPublic} launchTakeover={launchTakeover} ceoFirmId={ceoFirmId} playerName={playerName} />
+          <MarketTab marketSorted={marketSorted} currentFirm={currentFirm} currentFirmId={currentFirmId} rankIndex={rankIndex} goPublic={goPublic} launchTakeover={launchTakeover} ceoFirmId={ceoFirmId} ownFirmId={ownFirmId} playerName={playerName} />
         )}
 
         {tab === "emploi" && (
