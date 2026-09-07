@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PALETTE } from "./data/palette.js";
 import { RANKS, DIRECTORIAL_RANK } from "./data/ranks.js";
 import { FIRM_ID, FIRMS_INITIAL, CEO_NAMES, NEW_FIRM_NAMES, getStaff } from "./data/firms.js";
@@ -55,6 +55,7 @@ export default function App() {
   const [lastCeoOfferQuarter, setLastCeoOfferQuarter] = useState(-99);
   const [ownFirmId, setOwnFirmId] = useState(null);
   const [lastFundraiseQuarter, setLastFundraiseQuarter] = useState(-99);
+  const [lastQuarterAt, setLastQuarterAt] = useState(() => Date.now());
   const [fundraiseResult, setFundraiseResult] = useState(null);
   const [negotiation, setNegotiation] = useState(null);
 
@@ -170,14 +171,15 @@ export default function App() {
       if (s.lastCeoOfferQuarter !== undefined) setLastCeoOfferQuarter(s.lastCeoOfferQuarter);
       if (s.ownFirmId !== undefined) setOwnFirmId(s.ownFirmId);
       if (s.lastFundraiseQuarter !== undefined) setLastFundraiseQuarter(s.lastFundraiseQuarter);
+      if (s.lastQuarterAt !== undefined) setLastQuarterAt(s.lastQuarterAt);
     }
     setLoaded(true);
   }, []);
 
   useEffect(() => {
     if (!loaded || !playerName) return;
-    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResultsByFirm, relationships });
-  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResultsByFirm, relationships]);
+    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResultsByFirm, relationships, lastQuarterAt });
+  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResultsByFirm, relationships, lastQuarterAt]);
 
   const rankIndex = getRankIndex(xp);
   const currentRank = RANKS[rankIndex];
@@ -559,6 +561,53 @@ export default function App() {
     }
   }
 
+  // Le temps ne doit plus dépendre uniquement du clic manuel : un trimestre s'écoule tout seul
+  // après un délai réel, y compris pendant qu'on a l'onglet fermé (rattrapage au retour). Le bouton
+  // manuel reste disponible et remet simplement ce délai à zéro.
+  //
+  // advanceQuarter lit `quarter`/`firms`/`portfolio` etc. directement depuis la fermeture plutôt
+  // que via des mises à jour purement fonctionnelles : l'appeler plusieurs fois de suite de façon
+  // synchrone (ex: dans une boucle de rattrapage) leur ferait tous lire le même instantané périmé,
+  // React regroupant les mises à jour d'état sans re-rendu entre les appels. Le tick ne déclenche
+  // donc jamais plus d'une avancée à la fois ; le rattrapage se fait sur plusieurs cycles de 15s
+  // (donc en ~15s par trimestre en retard) plutôt qu'en rafale.
+  const QUARTER_REAL_MS = 4 * 60 * 1000;
+  const MAX_AUTO_CATCHUP_MS = 6 * QUARTER_REAL_MS;
+  const advanceQuarterRef = useRef(advanceQuarter);
+  useEffect(() => { advanceQuarterRef.current = advanceQuarter; });
+  const lastQuarterAtRef = useRef(lastQuarterAt);
+  useEffect(() => { lastQuarterAtRef.current = lastQuarterAt; }, [lastQuarterAt]);
+
+  // Au chargement, si la dernière visite remonte à très longtemps, on plafonne le retard plutôt que
+  // de laisser le rattrapage dérouler des dizaines de trimestres d'affilée.
+  useEffect(() => {
+    if (!loaded || !playerName) return;
+    const now = Date.now();
+    if (now - lastQuarterAtRef.current > MAX_AUTO_CATCHUP_MS) {
+      const clamped = now - MAX_AUTO_CATCHUP_MS;
+      lastQuarterAtRef.current = clamped;
+      setLastQuarterAt(clamped);
+    }
+  }, [loaded, playerName]);
+
+  useEffect(() => {
+    if (!loaded || !playerName) return;
+    function tick() {
+      const now = Date.now();
+      if (now - lastQuarterAtRef.current < QUARTER_REAL_MS) return;
+      advanceQuarterRef.current();
+      setLastQuarterAt((prev) => Math.min(now, prev + QUARTER_REAL_MS));
+    }
+    tick();
+    const interval = setInterval(tick, 15000);
+    return () => clearInterval(interval);
+  }, [loaded, playerName]);
+
+  function advanceQuarterManually() {
+    advanceQuarter();
+    setLastQuarterAt(Date.now());
+  }
+
   function reshuffleCards() { setRevisionCards(FORMULAS.map((_, i) => i).sort(() => Math.random() - 0.5).slice(0, 3)); }
 
   function confirmApplication(firmId) {
@@ -704,7 +753,7 @@ export default function App() {
 
   return (
     <div className="w-full min-h-screen flex flex-col" style={{ backgroundColor: PALETTE.bg, color: PALETTE.textPrimary, fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}>
-      <Header playerName={playerName} currentFirm={currentFirm} staff={staff} currentRank={currentRank} isCeo={isCeo} isFounder={currentFirmId === ownFirmId} playerPosition={playerPosition} firmsCount={firms.length} quarter={quarter} advanceQuarter={advanceQuarter} />
+      <Header playerName={playerName} currentFirm={currentFirm} staff={staff} currentRank={currentRank} isCeo={isCeo} isFounder={currentFirmId === ownFirmId} playerPosition={playerPosition} firmsCount={firms.length} quarter={quarter} advanceQuarter={advanceQuarterManually} />
       <NavTabs tab={tab} onSelect={selectTab} isDirectorial={isDirectorial} />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-6 py-8">
