@@ -11,10 +11,11 @@ import { defaultSkills } from "./data/skills.js";
 import { defaultReputation } from "./data/reputation.js";
 import { maybeGenerateCeoOffer } from "./data/ceo.js";
 import { FOUNDER_SEED_CAPITAL, attemptFundraise as attemptFundraiseRoll } from "./data/founder.js";
+import { POSTURES, computePlayerLeverage, computeFirmFlexibility, computeNegotiationRound, BAND_TEXTS } from "./data/negotiation.js";
 import { getRankIndex, clamp, randInt } from "./lib/utils.js";
 import { loadSave, persistSave } from "./lib/storage.js";
 import { computeCareerProfile, computeEndgamePath } from "./lib/career.js";
-import { getCompForRole } from "./lib/compensation.js";
+import { getGrossForEntry } from "./lib/compensation.js";
 
 import NameGate from "./components/NameGate.jsx";
 import Header from "./components/Header.jsx";
@@ -29,6 +30,7 @@ import FounderTab from "./components/tabs/FounderTab.jsx";
 import CareerTab from "./components/tabs/CareerTab.jsx";
 import MarketTab from "./components/tabs/MarketTab.jsx";
 import JobsTab from "./components/tabs/JobsTab.jsx";
+import NegotiationPanel from "./components/NegotiationPanel.jsx";
 import MailTab from "./components/tabs/MailTab.jsx";
 import NewsTab from "./components/tabs/NewsTab.jsx";
 import RevisionTab from "./components/tabs/RevisionTab.jsx";
@@ -51,6 +53,7 @@ export default function App() {
   const [ownFirmId, setOwnFirmId] = useState(null);
   const [lastFundraiseQuarter, setLastFundraiseQuarter] = useState(-99);
   const [fundraiseResult, setFundraiseResult] = useState(null);
+  const [negotiation, setNegotiation] = useState(null);
 
   const [firms, setFirms] = useState(FIRMS_INITIAL);
   const [currentFirmId, setCurrentFirmId] = useState(FIRM_ID);
@@ -331,6 +334,19 @@ export default function App() {
     }
     setFirms(working);
 
+    // Une partie de rémunération négociée en actions (voir la négociation salariale) suit ensuite
+    // la performance réelle de la firme concernée — cours de bourse si elle est cotée, score sinon.
+    setCareerHistory((prev) => prev.map((h) => {
+      if (!h.equityFirmId) return h;
+      const before = firms.find((f) => f.id === h.equityFirmId);
+      const after = working.find((f) => f.id === h.equityFirmId);
+      if (!before || !after) return h;
+      const growth = before.public && after.public
+        ? (after.stockPrice - before.stockPrice) / before.stockPrice
+        : (after.score - before.score) / 100;
+      return { ...h, equityValue: Math.max(0, +((h.equityValue || 0) * (1 + growth)).toFixed(2)) };
+    }));
+
     // Priorité 1 : les participations continuent leur dérive habituelle, mais chaque position
     // portant un risque caché planifié est vérifiée — le résultat s'impose au moment prévu,
     // indépendamment de la qualité de l'analyse initiale.
@@ -384,18 +400,66 @@ export default function App() {
     const rejected = Math.random() < (gap > 25 ? 0.4 : 0.05);
     if (rejected) {
       setApplicationResult({ success: false, message: `Le comité de recrutement de ${firm.name} juge votre profil pas encore prêt pour un fonds de ce calibre. Réessayez plus tard.` });
-    } else {
-      // Rejoindre un poste classique via le marché de l'emploi équivaut à quitter la fonction
-      // de CEO, s'il y en avait une — le poste de CEO n'est jamais l'un de ces postes affichés.
-      if (isCeo) setCeoFirmId(null);
-      setCurrentFirmId(firmId);
-      setYear((y) => y + 1);
-      setCareerHistory((h) => [...h, { firmName: firm.name, role: currentRank.name, year: year + 1 }]);
-      setNews((n) => [`T${quarter} — ${playerName} rejoint ${firm.name} au poste de ${currentRank.name}.`, ...n]);
-      const newStaff = getStaff(firmId, rankIndex, firms);
-      setApplicationResult({ success: true, message: `Vous êtes embauché(e) comme ${currentRank.name} chez ${firm.name}, sous la supervision de ${newStaff.superior} (${newStaff.superiorTitle}).` });
+      setViewingOfferId(null);
+      return;
     }
+    // À partir de VP+, l'offre affichée n'est qu'un point de départ : place à la négociation
+    // plutôt qu'à une embauche instantanée (voir src/data/negotiation.js).
+    if (isDirectorial) {
+      const playerLeverage = computePlayerLeverage({ progressPct, dealsReviewed, currentFirmScore: currentFirm.score, careerScore: careerProfile.careerScore });
+      const firmFlexibility = computeFirmFlexibility({ targetFirm: firm });
+      setNegotiation({ firmId, round: 1, playerLeverage, firmFlexibility, baseSalary: currentRank.salary, baseBonus: currentRank.bonus, phase: "posture", band: null, grantedBumpPct: 0, responseText: "" });
+      setViewingOfferId(null);
+      return;
+    }
+    // Rejoindre un poste classique via le marché de l'emploi équivaut à quitter la fonction
+    // de CEO, s'il y en avait une — le poste de CEO n'est jamais l'un de ces postes affichés.
+    if (isCeo) setCeoFirmId(null);
+    setCurrentFirmId(firmId);
+    setYear((y) => y + 1);
+    setCareerHistory((h) => [...h, { firmName: firm.name, role: currentRank.name, year: year + 1 }]);
+    setNews((n) => [`T${quarter} — ${playerName} rejoint ${firm.name} au poste de ${currentRank.name}.`, ...n]);
+    const newStaff = getStaff(firmId, rankIndex, firms);
+    setApplicationResult({ success: true, message: `Vous êtes embauché(e) comme ${currentRank.name} chez ${firm.name}, sous la supervision de ${newStaff.superior} (${newStaff.superiorTitle}).` });
     setViewingOfferId(null);
+  }
+
+  function submitNegotiationPosture(postureKey) {
+    setNegotiation((neg) => {
+      if (!neg) return neg;
+      const posture = POSTURES[postureKey];
+      const { band, grantedBumpPct } = computeNegotiationRound({ playerLeverage: neg.playerLeverage, firmFlexibility: neg.firmFlexibility, round: neg.round, requestedBumpPct: posture.pct });
+      const pool = BAND_TEXTS[band];
+      const responseText = pool[randInt(0, pool.length - 1)];
+      return { ...neg, phase: "response", band, grantedBumpPct, responseText };
+    });
+  }
+
+  function pushNegotiationAgain() {
+    setNegotiation((neg) => (neg && neg.round < 3 ? { ...neg, round: neg.round + 1, phase: "posture" } : neg));
+  }
+
+  function acceptNegotiatedOffer() {
+    setNegotiation((neg) => (neg ? { ...neg, phase: "compform" } : neg));
+  }
+
+  function declineNegotiation() {
+    setNegotiation(null);
+  }
+
+  function finalizeNegotiatedHire(useEquity) {
+    if (!negotiation) return;
+    const firm = firms.find((f) => f.id === negotiation.firmId);
+    if (isCeo) setCeoFirmId(null);
+    const totalBonus = Math.round(negotiation.baseBonus * (1 + negotiation.grantedBumpPct));
+    const bonusCash = useEquity ? Math.round(totalBonus * 0.7) : totalBonus;
+    const equityValue = useEquity ? Math.round(totalBonus * 0.3) : 0;
+    setCurrentFirmId(negotiation.firmId);
+    setYear((y) => y + 1);
+    setCareerHistory((h) => [...h, { firmName: firm.name, role: currentRank.name, year: year + 1, negotiatedSalary: negotiation.baseSalary, negotiatedBonusCash: bonusCash, equityValue, equityFirmId: useEquity ? negotiation.firmId : null }]);
+    setNews((n) => [`T${quarter} — ${playerName} rejoint ${firm.name} au poste de ${currentRank.name}, après négociation.`, ...n]);
+    setApplicationResult({ success: true, message: `Poste confirmé chez ${firm.name}, aux conditions négociées.` });
+    setNegotiation(null);
   }
 
   function respondCeoOffer(mailId, accept) {
@@ -451,7 +515,7 @@ export default function App() {
 
   const marketSorted = [...firms].sort((a, b) => b.score - a.score);
   const playerPosition = marketSorted.findIndex((f) => f.id === currentFirmId) + 1;
-  const grossTotal = careerHistory.reduce((sum, h) => { const r = getCompForRole(h.role); return sum + r.salary + r.bonus; }, 0);
+  const grossTotal = careerHistory.reduce((sum, h) => sum + getGrossForEntry(h), 0);
   const netTotal = Math.round(grossTotal * 0.62);
 
   if (!loaded) {
@@ -522,7 +586,15 @@ export default function App() {
           <MarketTab marketSorted={marketSorted} currentFirm={currentFirm} currentFirmId={currentFirmId} rankIndex={rankIndex} goPublic={goPublic} launchTakeover={launchTakeover} ceoFirmId={ceoFirmId} ownFirmId={ownFirmId} playerName={playerName} />
         )}
 
-        {tab === "emploi" && (
+        {tab === "emploi" && negotiation && (
+          <NegotiationPanel
+            negotiation={negotiation} firmName={firms.find((f) => f.id === negotiation.firmId)?.name || ""}
+            submitPosture={submitNegotiationPosture} pushAgain={pushNegotiationAgain}
+            acceptNegotiatedOffer={acceptNegotiatedOffer} declineOffer={declineNegotiation} finalizeHire={finalizeNegotiatedHire}
+          />
+        )}
+
+        {tab === "emploi" && !negotiation && (
           <JobsTab
             currentFirmId={currentFirmId} firms={firms} rankIndex={rankIndex} currentRank={currentRank}
             applicationResult={applicationResult} setApplicationResult={setApplicationResult}

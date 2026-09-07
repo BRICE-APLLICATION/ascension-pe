@@ -1,6 +1,6 @@
 import { PALETTE } from "../../data/palette.js";
 import { fmtMoney } from "../../lib/utils.js";
-import { getCompForRole } from "../../lib/compensation.js";
+import { getGrossForEntry } from "../../lib/compensation.js";
 
 export default function CareerTab({ playerName, year, careerHistory, grossTotal, netTotal, endgamePath }) {
   return (
@@ -10,9 +10,9 @@ export default function CareerTab({ playerName, year, careerHistory, grossTotal,
         <div className="mb-4 p-3 rounded text-xs" style={{ backgroundColor: PALETTE.panelAlt, border: `1px solid ${PALETTE.gold}`, color: PALETTE.gold }}>{endgamePath.label}</div>
       )}
       <div className="flex flex-col gap-2 mb-6">
-        {careerHistory.map((h, i) => { const r = getCompForRole(h.role); const gross = r.salary + r.bonus, net = Math.round(gross * 0.62); return (
+        {careerHistory.map((h, i) => { const gross = getGrossForEntry(h), net = Math.round(gross * 0.62); return (
           <div key={i} className="p-3 rounded flex items-center justify-between flex-wrap gap-2" style={{ backgroundColor: PALETTE.panel }}>
-            <div><p className="text-sm">{h.role} — {h.firmName}</p><p className="text-xs" style={{ color: PALETTE.textMuted }}>Année {h.year}</p></div>
+            <div><p className="text-sm">{h.role} — {h.firmName}{h.equityFirmId && <span style={{ color: PALETTE.gold }}> · partie en actions</span>}</p><p className="text-xs" style={{ color: PALETTE.textMuted }}>Année {h.year}</p></div>
             <div className="text-xs text-right" style={{ fontFamily: "'IBM Plex Mono', monospace" }}><p>Brut : {fmtMoney(gross)} $</p><p style={{ color: PALETTE.textMuted }}>Net (est.) : {fmtMoney(net)} $</p></div>
           </div>
         ); })}
