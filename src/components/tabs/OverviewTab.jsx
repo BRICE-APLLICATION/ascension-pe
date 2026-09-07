@@ -2,12 +2,14 @@ import { Briefcase, Target, BarChart3, ChevronRight, Users } from "lucide-react"
 import { PALETTE } from "../../data/palette.js";
 import { RANKS } from "../../data/ranks.js";
 import { AUDIENCES } from "../../data/reputation.js";
+import { CEO_COMP } from "../../data/ceo.js";
 import { clamp } from "../../lib/utils.js";
 
 export default function OverviewTab({
   currentFirm, rankIndex, currentRank, nextRank, progressPct, xp, dealsReviewed,
-  completedCount, visibleScenarios, staff, setTab, setXp, playerName, reputation,
+  completedCount, visibleScenarios, staff, setTab, setXp, playerName, reputation, isCeo,
 }) {
+  const comp = isCeo ? CEO_COMP : currentRank;
   return (
     <div className="flex flex-col md:flex-row gap-8">
       <div className="md:w-1/3">
@@ -33,8 +35,8 @@ export default function OverviewTab({
         </div>
         <div className="mt-6 p-4 rounded" style={{ backgroundColor: PALETTE.panel }}>
           <div className="flex items-center gap-2 mb-3"><Users size={14} color={PALETTE.textMuted} /><p className="text-xs" style={{ color: PALETTE.textMuted }}>Rémunération annuelle</p></div>
-          <p className="text-sm">Salaire : <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{currentRank.salary.toLocaleString("fr-CA")} $ CAD</span></p>
-          <p className="text-sm">Bonus visé : <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{currentRank.bonus.toLocaleString("fr-CA")} $ CAD</span></p>
+          <p className="text-sm">Salaire : <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{comp.salary.toLocaleString("fr-CA")} $ CAD</span></p>
+          <p className="text-sm">Bonus visé : <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{comp.bonus.toLocaleString("fr-CA")} $ CAD</span></p>
         </div>
         {rankIndex < 4 && (
           <div className="mt-6 p-4 rounded" style={{ backgroundColor: PALETTE.panel }}>

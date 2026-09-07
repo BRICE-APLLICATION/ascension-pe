@@ -9,8 +9,11 @@ import { FORMULAS } from "./data/formulas.js";
 import { SEED_MAIL } from "./data/mail.js";
 import { defaultSkills } from "./data/skills.js";
 import { defaultReputation } from "./data/reputation.js";
+import { maybeGenerateCeoOffer } from "./data/ceo.js";
 import { getRankIndex, clamp, randInt } from "./lib/utils.js";
 import { loadSave, persistSave } from "./lib/storage.js";
+import { computeCareerProfile } from "./lib/career.js";
+import { getCompForRole } from "./lib/compensation.js";
 
 import NameGate from "./components/NameGate.jsx";
 import Header from "./components/Header.jsx";
@@ -41,6 +44,8 @@ export default function App() {
   const [revisionCards, setRevisionCards] = useState([0, 1, 2]);
   const [skills, setSkills] = useState(defaultSkills());
   const [reputation, setReputation] = useState(defaultReputation());
+  const [ceoFirmId, setCeoFirmId] = useState(null);
+  const [lastCeoOfferQuarter, setLastCeoOfferQuarter] = useState(-99);
 
   const [firms, setFirms] = useState(FIRMS_INITIAL);
   const [currentFirmId, setCurrentFirmId] = useState(FIRM_ID);
@@ -90,14 +95,16 @@ export default function App() {
       if (s.proposalChoices) setProposalChoices(s.proposalChoices);
       if (s.skills) setSkills(s.skills);
       if (s.reputation) setReputation(s.reputation);
+      if (s.ceoFirmId !== undefined) setCeoFirmId(s.ceoFirmId);
+      if (s.lastCeoOfferQuarter !== undefined) setLastCeoOfferQuarter(s.lastCeoOfferQuarter);
     }
     setLoaded(true);
   }, []);
 
   useEffect(() => {
     if (!loaded || !playerName) return;
-    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation });
-  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation]);
+    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter });
+  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter]);
 
   const rankIndex = getRankIndex(xp);
   const currentRank = RANKS[rankIndex];
@@ -107,6 +114,8 @@ export default function App() {
 
   const currentFirm = firms.find((f) => f.id === currentFirmId) || firms[0];
   const staff = getStaff(currentFirmId, rankIndex, firms);
+  const isCeo = ceoFirmId === currentFirmId;
+  const careerProfile = computeCareerProfile({ skills, reputation, xp, dealsReviewed, portfolio });
 
   const selectedScenario = SCENARIOS.find((s) => s.id === selectedScenarioId);
   const chosenOptionId = selectedScenarioId ? scenarioChoices[selectedScenarioId] : null;
@@ -317,6 +326,25 @@ export default function App() {
     if (myScore >= 40) setOpaWarned(false);
     setNews((n) => [...newsItems, ...n]);
     addRandomMail();
+
+    // Chemin CEO : opportunité confidentielle, jamais dans le marché de l'emploi, déclenchée
+    // silencieusement selon le profil de carrière — voir src/data/ceo.js.
+    const hasPendingCeoOffer = mail.some((m) => m.type === "ceo-offer" && m.status === "pending");
+    const ceoOffer = maybeGenerateCeoOffer({ rankIndex, careerProfile, hasPendingOffer: hasPendingCeoOffer, quarter: q, lastOfferQuarter: lastCeoOfferQuarter, ceoFirmId, currentFirmId, firms: working });
+    if (ceoOffer) {
+      setLastCeoOfferQuarter(q);
+      const targetFirm = working.find((f) => f.id === ceoOffer.firmId);
+      const isInternal = ceoOffer.mode === "internal";
+      setMail((m) => [{
+        id: `ceo-offer-${Date.now()}`,
+        from: `Conseil d'administration — ${targetFirm.name}`,
+        subject: isInternal ? "CONFIDENTIEL — Décision du Board" : "CONFIDENTIEL — Opportunité exécutive",
+        body: isInternal
+          ? `Le conseil d'administration a évalué votre performance, votre leadership et votre historique d'investissement. Le Board souhaite vous proposer le poste de Chief Executive Officer de ${targetFirm.name}.`
+          : `The Board of ${targetFirm.name} would like to discuss a confidential executive opportunity with you. Position: Chief Executive Officer. This position is not publicly advertised.`,
+        type: "ceo-offer", mode: ceoOffer.mode, firmId: ceoOffer.firmId, status: "pending",
+      }, ...m]);
+    }
   }
 
   function reshuffleCards() { setRevisionCards(FORMULAS.map((_, i) => i).sort(() => Math.random() - 0.5).slice(0, 3)); }
@@ -328,6 +356,9 @@ export default function App() {
     if (rejected) {
       setApplicationResult({ success: false, message: `Le comité de recrutement de ${firm.name} juge votre profil pas encore prêt pour un fonds de ce calibre. Réessayez plus tard.` });
     } else {
+      // Rejoindre un poste classique via le marché de l'emploi équivaut à quitter la fonction
+      // de CEO, s'il y en avait une — le poste de CEO n'est jamais l'un de ces postes affichés.
+      if (isCeo) setCeoFirmId(null);
       setCurrentFirmId(firmId);
       setYear((y) => y + 1);
       setCareerHistory((h) => [...h, { firmName: firm.name, role: currentRank.name, year: year + 1 }]);
@@ -338,9 +369,28 @@ export default function App() {
     setViewingOfferId(null);
   }
 
+  function respondCeoOffer(mailId, accept) {
+    const offer = mail.find((m) => m.id === mailId);
+    if (!offer || offer.type !== "ceo-offer" || offer.status !== "pending") return;
+    setMail((m) => m.map((item) => (item.id === mailId ? { ...item, status: accept ? "accepted" : "declined" } : item)));
+    if (!accept) return;
+
+    const targetFirm = firms.find((f) => f.id === offer.firmId);
+    setCeoFirmId(offer.firmId);
+    if (offer.mode === "external") {
+      setCurrentFirmId(offer.firmId);
+      setYear((y) => y + 1);
+      setCareerHistory((h) => [...h, { firmName: targetFirm.name, role: "CEO", year: year + 1 }]);
+      setNews((n) => [`T${quarter} — ${playerName} devient CEO de ${targetFirm.name}, recruté(e) confidentiellement par son Board.`, ...n]);
+    } else {
+      setCareerHistory((h) => [...h, { firmName: targetFirm.name, role: "CEO", year }]);
+      setNews((n) => [`T${quarter} — ${playerName} est promu(e) CEO de ${targetFirm.name} par décision du Board.`, ...n]);
+    }
+  }
+
   const marketSorted = [...firms].sort((a, b) => b.score - a.score);
   const playerPosition = marketSorted.findIndex((f) => f.id === currentFirmId) + 1;
-  const grossTotal = careerHistory.reduce((sum, h) => { const r = RANKS.find((rk) => rk.name === h.role) || RANKS[0]; return sum + r.salary + r.bonus; }, 0);
+  const grossTotal = careerHistory.reduce((sum, h) => { const r = getCompForRole(h.role); return sum + r.salary + r.bonus; }, 0);
   const netTotal = Math.round(grossTotal * 0.62);
 
   if (!loaded) {
@@ -360,7 +410,7 @@ export default function App() {
 
   return (
     <div className="w-full min-h-screen flex flex-col" style={{ backgroundColor: PALETTE.bg, color: PALETTE.textPrimary, fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}>
-      <Header playerName={playerName} currentFirm={currentFirm} staff={staff} currentRank={currentRank} playerPosition={playerPosition} firmsCount={firms.length} quarter={quarter} advanceQuarter={advanceQuarter} />
+      <Header playerName={playerName} currentFirm={currentFirm} staff={staff} currentRank={currentRank} isCeo={isCeo} playerPosition={playerPosition} firmsCount={firms.length} quarter={quarter} advanceQuarter={advanceQuarter} />
       <NavTabs tab={tab} onSelect={selectTab} isDirectorial={isDirectorial} />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-6 py-8">
@@ -368,7 +418,7 @@ export default function App() {
           <OverviewTab
             currentFirm={currentFirm} rankIndex={rankIndex} currentRank={currentRank} nextRank={nextRank}
             progressPct={progressPct} xp={xp} dealsReviewed={dealsReviewed} completedCount={completedCount}
-            visibleScenarios={visibleScenarios} staff={staff} setTab={setTab} setXp={setXp} playerName={playerName} reputation={reputation}
+            visibleScenarios={visibleScenarios} staff={staff} setTab={setTab} setXp={setXp} playerName={playerName} reputation={reputation} isCeo={isCeo}
           />
         )}
 
@@ -399,7 +449,7 @@ export default function App() {
         {tab === "carriere" && <CareerTab playerName={playerName} year={year} careerHistory={careerHistory} grossTotal={grossTotal} netTotal={netTotal} />}
 
         {tab === "marche" && (
-          <MarketTab marketSorted={marketSorted} currentFirm={currentFirm} currentFirmId={currentFirmId} rankIndex={rankIndex} goPublic={goPublic} launchTakeover={launchTakeover} />
+          <MarketTab marketSorted={marketSorted} currentFirm={currentFirm} currentFirmId={currentFirmId} rankIndex={rankIndex} goPublic={goPublic} launchTakeover={launchTakeover} ceoFirmId={ceoFirmId} playerName={playerName} />
         )}
 
         {tab === "emploi" && (
@@ -410,7 +460,7 @@ export default function App() {
           />
         )}
 
-        {tab === "mails" && <MailTab mail={mail} setTab={setTab} />}
+        {tab === "mails" && <MailTab mail={mail} setTab={setTab} respondCeoOffer={respondCeoOffer} />}
 
         {tab === "actualites" && <NewsTab news={news} />}
 
