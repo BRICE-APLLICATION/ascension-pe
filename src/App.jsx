@@ -261,9 +261,16 @@ export default function App() {
 
     setProposalChoices((p) => ({ ...p, [company.id]: option.id }));
     setDryPowder((d) => +(d - equity).toFixed(1));
-    setFirms((prev) => prev.map((f) => (f.id === currentFirmId ? { ...f, corporateDebt: +((f.corporateDebt || 0) + debt).toFixed(1), score: clamp(f.score + (option.correct ? 4 : -3), 5, 98) } : f)));
+    setFirms((prev) => prev.map((f) => {
+      if (f.id !== currentFirmId) return f;
+      const oldDebt = f.corporateDebt || 0;
+      const oldRate = f.debtWeightedRate || 0;
+      const newDebt = +(oldDebt + debt).toFixed(1);
+      const newRate = newDebt > 0 ? (oldDebt * oldRate + debt * bank.rate) / newDebt : 0;
+      return { ...f, corporateDebt: newDebt, debtWeightedRate: newRate, score: clamp(f.score + (option.correct ? 4 : -3), 5, 98) };
+    }));
     const pendingRisk = rollHiddenRisk(company, option);
-    setPortfolio((p) => [...p, { id: company.id, name: company.name, invested: price, value: price, quarterAcquired: quarter, pendingRisk, resolvedRisk: null, bankName: bank.name }]);
+    setPortfolio((p) => [...p, { id: company.id, name: company.name, invested: price, value: price, ebitda: company.ebitda, quarterAcquired: quarter, pendingRisk, resolvedRisk: null, bankName: bank.name }]);
     setInvestedIds((ids) => [...ids, company.id]);
     setDealsReviewed((v) => v + 1);
     setLoanLog((l) => [{ id: `loan-${Date.now()}`, quarter, bankId: bank.id, bankName: bank.name, rate: bank.rate, amount: debt, purpose: company.name, rejected: false }, ...l]);
@@ -274,6 +281,17 @@ export default function App() {
     }));
   }
 
+  // Priorité 5 — remboursement volontaire : réduit la dette corporate (et donc le risque de bris
+  // de covenant) au prix d'une partie du capital disponible pour de nouveaux deals.
+  function repayDebt(amount) {
+    const debt = currentFirm.corporateDebt || 0;
+    const repay = +Math.min(amount, dryPowder, debt).toFixed(1);
+    if (repay <= 0) return;
+    setDryPowder((d) => +(d - repay).toFixed(1));
+    setFirms((prev) => prev.map((f) => (f.id === currentFirmId ? { ...f, corporateDebt: +((f.corporateDebt || 0) - repay).toFixed(1) } : f)));
+    setNews((n) => [`T${quarter} — ${currentFirm.name} rembourse ${repay} M$ de dette corporate par anticipation.`, ...n]);
+  }
+
   function launchTakeover(targetId) {
     const target = firms.find((f) => f.id === targetId);
     const cost = Math.max(5, Math.round(target.score * 0.6));
@@ -282,7 +300,7 @@ export default function App() {
     const success = Math.random() < chance;
     if (success) {
       const pickedName = NEW_FIRM_NAMES[randInt(0, NEW_FIRM_NAMES.length - 1)];
-      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-") + "-" + quarter, name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false, corporateDebt: 0, lpCommitted: randInt(80, 150), cash: randInt(5, 15) };
+      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-") + "-" + quarter, name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false, corporateDebt: 0, debtWeightedRate: 0, lpCommitted: randInt(80, 150), cash: randInt(5, 15) };
       setFirms((prev) => prev.filter((f) => f.id !== targetId).map((f) => (f.id === currentFirmId ? { ...f, score: clamp(f.score + Math.round(target.score / 4), 5, 98), employees: f.employees + target.employees } : f)).concat(newEntrant));
       setDryPowder((d) => +(d - cost).toFixed(1));
       setXp((v) => v + 40);
@@ -316,6 +334,7 @@ export default function App() {
   function advanceQuarter() {
     const q = quarter + 1;
     setQuarter(q);
+    let covenantBreach = null;
     let working = firms.map((f) => {
       if (f.id === currentFirmId) {
         const updated = { ...f };
@@ -326,7 +345,21 @@ export default function App() {
         updated.lpCommitted = Math.max(50, Math.round(lpCommitted * (1 + (f.score - 50) / 2000)));
         const feeRevenue = +(lpCommitted * 0.02 / 4).toFixed(1);
         const opex = +(f.employees * 0.05).toFixed(1);
-        updated.cash = Math.max(0, +((f.cash || 0) + feeRevenue - opex).toFixed(1));
+        const debt = f.corporateDebt || 0;
+        const interestExpense = +(debt * (f.debtWeightedRate || 0) / 4).toFixed(1);
+        updated.cash = Math.max(0, +((f.cash || 0) + feeRevenue - opex - interestExpense).toFixed(1));
+        updated.corporateDebt = debt;
+
+        // Priorité 5 — covenant : au-delà de 6,0x dette nette/EBITDA du portefeuille, la banque
+        // impose un cash sweep forcé (une partie de la trésorerie rembourse la dette d'office)
+        // plutôt que d'attendre une négociation.
+        const portfolioEbitda = portfolio.reduce((s, p) => s + (p.ebitda || 0), 0);
+        if (portfolioEbitda > 0 && debt / portfolioEbitda > 6) {
+          const sweep = +(updated.cash * 0.5).toFixed(1);
+          updated.corporateDebt = Math.max(0, +(debt - sweep).toFixed(1));
+          updated.cash = +(updated.cash - sweep).toFixed(1);
+          covenantBreach = { sweep, ratio: +(debt / portfolioEbitda).toFixed(1) };
+        }
         return updated;
       }
       const updated = { ...f, score: clamp(f.score + randInt(-4, 4), 8, 96), employees: f.employees + randInt(0, 2) };
@@ -339,7 +372,7 @@ export default function App() {
     if (q % 2 === 0 && sorted.length >= 2) {
       const target = sorted[0], acquirer = sorted[1];
       const pickedName = NEW_FIRM_NAMES[randInt(0, NEW_FIRM_NAMES.length - 1)];
-      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-"), name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false, corporateDebt: 0, lpCommitted: randInt(80, 150), cash: randInt(5, 15) };
+      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-"), name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false, corporateDebt: 0, debtWeightedRate: 0, lpCommitted: randInt(80, 150), cash: randInt(5, 15) };
       const merged = { ...acquirer, score: clamp(Math.round((acquirer.score + target.score) / 2) + 5, 10, 96), employees: acquirer.employees + target.employees };
       working = working.filter((f) => f.id !== target.id && f.id !== acquirer.id);
       working.push(merged, newEntrant);
@@ -385,6 +418,10 @@ export default function App() {
     const myScore = working.find((f) => f.id === currentFirmId).score;
     if (myScore < 35 && !opaWarned) { newsItems.push(`T${q} — ⚠️ ${currentFirm.name} affiche des performances faibles : une OPA hostile devient possible.`); setOpaWarned(true); }
     if (myScore >= 40) setOpaWarned(false);
+    if (covenantBreach) {
+      newsItems.push(`T${q} — ⚠️ Bris de covenant chez ${currentFirm.name} (dette nette/EBITDA à ${covenantBreach.ratio}x) : la banque impose un remboursement forcé de ${covenantBreach.sweep} M$.`);
+      setReputation((r) => ({ ...r, banks: clamp(r.banks - 5, 0, 100) }));
+    }
     setNews((n) => [...newsItems, ...n]);
     addRandomMail();
 
@@ -505,7 +542,7 @@ export default function App() {
     if (isCeo) setCeoFirmId(null);
     const id = `${playerName.toLowerCase().replace(/[^a-z]+/g, "-")}-capital`;
     const name = `${playerName} Capital`;
-    const newFirm = { id, name, score: 40, employees: 3, public: false, corporateDebt: 0, lpCommitted: 0, cash: 1, fundsRaised: 0 };
+    const newFirm = { id, name, score: 40, employees: 3, public: false, corporateDebt: 0, debtWeightedRate: 0, lpCommitted: 0, cash: 1, fundsRaised: 0 };
     setFirms((prev) => [...prev, newFirm]);
     setCurrentFirmId(id);
     setOwnFirmId(id);
@@ -583,7 +620,13 @@ export default function App() {
           />
         )}
 
-        {tab === "banque" && <BankTab dryPowder={dryPowder} isDirectorial={isDirectorial} loanLog={loanLog} corporateDebt={currentFirm.corporateDebt || 0} />}
+        {tab === "banque" && (
+          <BankTab
+            dryPowder={dryPowder} isDirectorial={isDirectorial} loanLog={loanLog}
+            corporateDebt={currentFirm.corporateDebt || 0} debtWeightedRate={currentFirm.debtWeightedRate || 0}
+            portfolioEbitda={portfolio.reduce((s, p) => s + (p.ebitda || 0), 0)} repayDebt={repayDebt}
+          />
+        )}
 
         {tab === "finances" && isDirectorial && (
           <FinancesTab currentFirm={currentFirm} dryPowder={dryPowder} portfolio={portfolio} quarter={quarter} />

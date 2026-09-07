@@ -73,6 +73,7 @@ const FIRMS_BASE = [
 export const FIRMS_INITIAL = FIRMS_BASE.map((f) => ({
   ...f,
   corporateDebt: 0,
+  debtWeightedRate: 0,
   lpCommitted: Math.round(100 + f.score * 3),
   cash: Math.round(5 + f.score / 10),
 }));

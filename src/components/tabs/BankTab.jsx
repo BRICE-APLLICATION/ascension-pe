@@ -2,12 +2,28 @@ import { Landmark, Lock } from "lucide-react";
 import { PALETTE } from "../../data/palette.js";
 import { BANKS } from "../../data/banks.js";
 
-export default function BankTab({ dryPowder, isDirectorial, loanLog, corporateDebt }) {
+export default function BankTab({ dryPowder, isDirectorial, loanLog, corporateDebt, debtWeightedRate, portfolioEbitda, repayDebt }) {
+  const covenantRatio = portfolioEbitda > 0 ? +(corporateDebt / portfolioEbitda).toFixed(1) : null;
+  const nearCovenant = covenantRatio !== null && covenantRatio > 4.5;
+  const overCovenant = covenantRatio !== null && covenantRatio > 6;
   return (
     <div className="max-w-2xl">
       <div className="p-4 rounded mb-4" style={{ backgroundColor: PALETTE.panel }}>
         <p className="text-sm">Capital disponible (dry powder) : <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: PALETTE.gold }}>{dryPowder} M$</span></p>
         <p className="text-sm mt-1">Dette corporate cumulée : <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: PALETTE.crimson }}>{corporateDebt} M$</span></p>
+        {corporateDebt > 0 && <p className="text-xs mt-1" style={{ color: PALETTE.textMuted }}>Taux moyen pondéré : {(debtWeightedRate * 100).toFixed(1)}% · charge d'intérêt trimestrielle ≈ {(corporateDebt * debtWeightedRate / 4).toFixed(1)} M$</p>}
+        {covenantRatio !== null && (
+          <p className="text-xs mt-1" style={{ color: overCovenant ? PALETTE.crimson : nearCovenant ? PALETTE.gold : PALETTE.textMuted }}>
+            Dette nette / EBITDA du portefeuille : {covenantRatio}x {overCovenant ? "— covenant rompu, cash sweep en cours" : nearCovenant ? "— proche du covenant (6,0x)" : ""}
+          </p>
+        )}
+        {isDirectorial && corporateDebt > 0 && (
+          <div className="flex gap-2 mt-3 flex-wrap">
+            {[5, 10, 25].map((amt) => (
+              <button key={amt} onClick={() => repayDebt(amt)} disabled={dryPowder < 1} className="px-3 py-1.5 rounded text-xs" style={{ backgroundColor: PALETTE.panelAlt, color: PALETTE.gold, opacity: dryPowder < 1 ? 0.5 : 1 }}>Rembourser {Math.min(amt, dryPowder, corporateDebt)} M$</button>
+            ))}
+          </div>
+        )}
       </div>
 
       <p className="text-xs mb-2" style={{ color: PALETTE.textMuted }}>Prêteurs disponibles</p>
