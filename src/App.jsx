@@ -12,6 +12,7 @@ import { defaultReputation } from "./data/reputation.js";
 import { maybeGenerateCeoOffer } from "./data/ceo.js";
 import { FOUNDER_SEED_CAPITAL, attemptFundraise as attemptFundraiseRoll } from "./data/founder.js";
 import { POSTURES, computePlayerLeverage, computeFirmFlexibility, computeNegotiationRound, BAND_TEXTS } from "./data/negotiation.js";
+import { DD_BUDGET, investigateCategory } from "./data/duediligence.js";
 import { getRankIndex, clamp, randInt } from "./lib/utils.js";
 import { loadSave, persistSave } from "./lib/storage.js";
 import { computeCareerProfile, computeEndgamePath } from "./lib/career.js";
@@ -72,6 +73,7 @@ export default function App() {
   const [proposalChoices, setProposalChoices] = useState({});
   const [selectedProposal, setSelectedProposal] = useState({});
   const [bankRejections, setBankRejections] = useState({});
+  const [ddResults, setDdResults] = useState({});
 
   const [dryPowder, setDryPowder] = useState(40);
   const [loanLog, setLoanLog] = useState([]);
@@ -101,6 +103,7 @@ export default function App() {
       if (s.loanLog) setLoanLog(s.loanLog);
       if (s.scenarioChoices) setScenarioChoices(s.scenarioChoices);
       if (s.proposalChoices) setProposalChoices(s.proposalChoices);
+      if (s.ddResults) setDdResults(s.ddResults);
       if (s.skills) setSkills(s.skills);
       if (s.reputation) setReputation(s.reputation);
       if (s.ceoFirmId !== undefined) setCeoFirmId(s.ceoFirmId);
@@ -113,8 +116,8 @@ export default function App() {
 
   useEffect(() => {
     if (!loaded || !playerName) return;
-    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter });
-  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter]);
+    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResults });
+  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResults]);
 
   const rankIndex = getRankIndex(xp);
   const currentRank = RANKS[rankIndex];
@@ -161,8 +164,21 @@ export default function App() {
     setExpandedCompanyId(null);
     setSelectedProposal((p) => { const n = { ...p }; delete n[usedCompanyId]; return n; });
     setBankRejections((r) => { const n = { ...r }; delete n[usedCompanyId]; return n; });
+    setDdResults((d) => { const n = { ...d }; delete n[usedCompanyId]; return n; });
   }
   function passOn(poolIdx) { cycleSlot(poolIdx); }
+
+  // Priorité 4 — due diligence à budget limité : investiguer la bonne catégorie donne une chance
+  // de voir la description du risque cible avant d'investir, sans jamais garantir sa présence ni
+  // réduire la probabilité qu'il se matérialise — l'information seule, pas une sécurité.
+  function investigateDD(poolIdx, categoryKey) {
+    const company = ACQUISITION_POOL[poolIdx];
+    if (!isDirectorial || proposalChoices[company.id]) return;
+    const already = ddResults[company.id] || {};
+    if (already[categoryKey] || Object.keys(already).length >= DD_BUDGET) return;
+    const result = investigateCategory(company, categoryKey);
+    setDdResults((d) => ({ ...d, [company.id]: { ...already, [categoryKey]: result.found ? "found" : "clean" } }));
+  }
 
   const MAX_ADD_ONS = 2;
 
@@ -563,6 +579,7 @@ export default function App() {
             proposalChoices={proposalChoices} pickProposal={pickProposal} passOn={passOn}
             selectedProposal={selectedProposal} bankRejections={bankRejections} requestFinancing={requestFinancing}
             portfolio={portfolio} quarter={quarter} dryPowder={dryPowder} addBoltOn={addBoltOn}
+            ddResults={ddResults} investigateDD={investigateDD}
           />
         )}
 

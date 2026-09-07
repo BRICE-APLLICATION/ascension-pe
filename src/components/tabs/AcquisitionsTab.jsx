@@ -1,14 +1,15 @@
-import { ArrowUpRight, ArrowDownRight, Clock, AlertTriangle } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, Clock, AlertTriangle, Search } from "lucide-react";
 import { PALETTE } from "../../data/palette.js";
 import { ACQUISITION_POOL } from "../../data/acquisitions.js";
 import { BANKS } from "../../data/banks.js";
+import { DD_CATEGORIES, DD_BUDGET } from "../../data/duediligence.js";
 
 const MAX_ADD_ONS = 2;
 
 export default function AcquisitionsTab({
   isDirectorial, staff, acquisitionSlots, expandedCompanyId, setExpandedCompanyId,
   proposalChoices, pickProposal, passOn, selectedProposal, bankRejections, requestFinancing,
-  portfolio, quarter, dryPowder, addBoltOn,
+  portfolio, quarter, dryPowder, addBoltOn, ddResults, investigateDD,
 }) {
   return (
     <div>
@@ -38,6 +39,32 @@ export default function AcquisitionsTab({
                   <p style={{ color: PALETTE.textMuted }}>Concentration client : {c.concentration}%</p>
                   <p style={{ color: PALETTE.textMuted }}>Comparables sectoriels : {c.compRange}</p>
                   {c.note && <p className="mt-1" style={{ color: PALETTE.gold }}>{c.note}</p>}
+                  {isDirectorial && !chosen && (() => {
+                    const results = ddResults[c.id] || {};
+                    const used = Object.keys(results).length;
+                    const foundCategory = Object.entries(results).find(([, v]) => v === "found");
+                    return (
+                      <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${PALETTE.line}` }}>
+                        <p style={{ color: PALETTE.textMuted }}>Due diligence — {used}/{DD_BUDGET} investigations utilisées</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {DD_CATEGORIES.map((cat) => {
+                            const result = results[cat.key];
+                            const disabled = !!result || used >= DD_BUDGET;
+                            return (
+                              <button key={cat.key} onClick={() => investigateDD(idx, cat.key)} disabled={disabled} className="px-2 py-1 rounded" style={{ backgroundColor: result === "found" ? "rgba(166,68,76,0.15)" : PALETTE.panel, border: `1px solid ${result === "found" ? PALETTE.crimson : PALETTE.line}`, color: result ? PALETTE.textMuted : PALETTE.textPrimary, opacity: disabled && !result ? 0.5 : 1 }}>
+                                {cat.label}{result === "clean" && " ✓"}{result === "found" && " ⚠"}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {foundCategory && (
+                          <p className="mt-2 flex items-start gap-1" style={{ color: PALETTE.crimson }}>
+                            <Search size={12} className="mt-0.5 shrink-0" /> {ACQUISITION_POOL[idx].hiddenRisk.description}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className="mt-3 flex flex-col gap-2">
                     <p style={{ color: PALETTE.textMuted }}>{isDirectorial ? "Structurer l'investissement :" : `Proposer à ${staff.superior} :`}</p>
                     {c.proposals.map((opt) => {
