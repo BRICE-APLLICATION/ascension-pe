@@ -57,6 +57,7 @@ export default function App() {
   const [lastCeoOfferQuarter, setLastCeoOfferQuarter] = useState(-99);
   const [ownFirmId, setOwnFirmId] = useState(null);
   const [lastFundraiseQuarter, setLastFundraiseQuarter] = useState(-99);
+  const [lastPartnershipQuarter, setLastPartnershipQuarter] = useState(-99);
   const [lastQuarterAt, setLastQuarterAt] = useState(() => Date.now());
   const [fundraiseResult, setFundraiseResult] = useState(null);
   const [negotiation, setNegotiation] = useState(null);
@@ -178,6 +179,7 @@ export default function App() {
       if (s.lastCeoOfferQuarter !== undefined) setLastCeoOfferQuarter(s.lastCeoOfferQuarter);
       if (s.ownFirmId !== undefined) setOwnFirmId(s.ownFirmId);
       if (s.lastFundraiseQuarter !== undefined) setLastFundraiseQuarter(s.lastFundraiseQuarter);
+      if (s.lastPartnershipQuarter !== undefined) setLastPartnershipQuarter(s.lastPartnershipQuarter);
       if (s.lastQuarterAt !== undefined) setLastQuarterAt(s.lastQuarterAt);
       if (s.recruitsByFirm) setRecruitsByFirm(s.recruitsByFirm);
       if (s.hiredCandidateIdsByFirm) setHiredCandidateIdsByFirm(s.hiredCandidateIdsByFirm);
@@ -187,8 +189,8 @@ export default function App() {
 
   useEffect(() => {
     if (!loaded || !playerName) return;
-    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm });
-  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm]);
+    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, lastPartnershipQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm });
+  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, lastPartnershipQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm]);
 
   const rankIndex = getRankIndex(xp);
   const currentRank = RANKS[rankIndex];
@@ -799,8 +801,30 @@ export default function App() {
     }
   }
 
+  // Proposition de partenariat/co-investissement sortante : une firme mieux cotée que la cible
+  // et disposant de plus de capital disponible a plus de chances de convaincre — jamais un tirage
+  // déconnecté des rapports de force déjà utilisés ailleurs (OPA, candidature).
+  function sendPartnershipProposal(targetFirmId) {
+    if (!isDirectorial || targetFirmId === currentFirmId || quarter <= lastPartnershipQuarter) return;
+    const target = firms.find((f) => f.id === targetFirmId);
+    if (!target) return;
+    setLastPartnershipQuarter(quarter);
+    const chance = clamp(0.35 + (currentFirm.score - target.score) / 200 + dryPowder / 150, 0.1, 0.85);
+    const accepted = Math.random() < chance;
+    const ceoName = CEO_NAMES[targetFirmId] || target.name;
+    if (accepted) {
+      const boost = Math.round(2 + target.score / 20);
+      setDryPowder((d) => +(d + boost).toFixed(1));
+      setMail((m) => [{ id: `mail-${Date.now()}`, from: `${ceoName} — ${target.name}`, subject: "Partenariat accepté", body: `${target.name} accepte de co-investir à vos côtés, apportant ${boost} M$ de capital disponible supplémentaire.`, type: "partnership" }, ...m]);
+      setNews((n) => [`T${quarter} — ${currentFirm.name} et ${target.name} annoncent un partenariat de co-investissement.`, ...n]);
+    } else {
+      setMail((m) => [{ id: `mail-${Date.now()}`, from: `${ceoName} — ${target.name}`, subject: "Partenariat décliné", body: `${target.name} décline la proposition de partenariat pour l'instant.`, type: "partnership" }, ...m]);
+    }
+  }
+
   const marketSorted = [...firms].sort((a, b) => b.score - a.score);
   const playerPosition = marketSorted.findIndex((f) => f.id === currentFirmId) + 1;
+  const unreadMailCount = mail.filter((m) => !m.read).length;
   const grossTotal = careerHistory.reduce((sum, h) => sum + getGrossForEntry(h), 0);
   const netTotal = Math.round(grossTotal * 0.62);
 
@@ -818,12 +842,13 @@ export default function App() {
     setApplicationResult(null);
     setViewingOfferId(null);
     setFundraiseResult(null);
+    if (id === "mails") setMail((m) => m.map((x) => ({ ...x, read: true })));
   }
 
   return (
     <div className="w-full min-h-screen flex flex-col" style={{ backgroundColor: PALETTE.bg, color: PALETTE.textPrimary, fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}>
       <Header playerName={playerName} currentFirm={currentFirm} staff={staff} currentRank={currentRank} isCeo={isCeo} isFounder={currentFirmId === ownFirmId} playerPosition={playerPosition} firmsCount={firms.length} quarter={quarter} advanceQuarter={advanceQuarterManually} />
-      <NavTabs tab={tab} onSelect={selectTab} isDirectorial={isDirectorial} showRecruitment={!!ownFirmId && currentFirmId === ownFirmId && isDirectorial} />
+      <NavTabs tab={tab} onSelect={selectTab} isDirectorial={isDirectorial} showRecruitment={!!ownFirmId && currentFirmId === ownFirmId && isDirectorial} unreadMailCount={unreadMailCount} />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-6 py-8">
         {tab === "apercu" && (
@@ -904,7 +929,13 @@ export default function App() {
           />
         )}
 
-        {tab === "mails" && <MailTab mail={mail} setTab={setTab} respondCeoOffer={respondCeoOffer} />}
+        {tab === "mails" && (
+          <MailTab
+            mail={mail} setTab={setTab} respondCeoOffer={respondCeoOffer} firms={firms} currentFirmId={currentFirmId}
+            isDirectorial={isDirectorial} sendPartnershipProposal={sendPartnershipProposal}
+            canSendPartnership={quarter > lastPartnershipQuarter}
+          />
+        )}
 
         {tab === "actualites" && <NewsTab news={news} />}
 
