@@ -43,7 +43,7 @@ export const CEO_NAMES = {
   "cascade-point": "Vivian Cascade", meadowfield: "Grégoire Meadow",
 };
 
-export const FIRMS_INITIAL = [
+const FIRMS_BASE = [
   { id: "carl-capital", name: "Carl Capital", score: 68, employees: 18, public: false },
   { id: "northgate", name: "Northgate Partners", score: 74, employees: 210, public: true, stockPrice: 42.1 },
   { id: "solstice", name: "Solstice Capital", score: 61, employees: 150, public: false },
@@ -65,5 +65,16 @@ export const FIRMS_INITIAL = [
   { id: "cascade-point", name: "Cascade Point Equity", score: 82, employees: 260, public: true, stockPrice: 63.9 },
   { id: "meadowfield", name: "Meadowfield Partners", score: 29, employees: 35, public: false },
 ];
+
+// Dette corporate distincte des prêts sur deals individuels : accumulée via le système
+// multi-banques quand le joueur finance une acquisition à effet de levier.
+// lpCommitted (AUM) et cash évoluent ensuite chaque trimestre selon le score de la firme
+// (cf. advanceQuarter) plutôt que de rester des valeurs d'ambiance figées.
+export const FIRMS_INITIAL = FIRMS_BASE.map((f) => ({
+  ...f,
+  corporateDebt: 0,
+  lpCommitted: Math.round(100 + f.score * 3),
+  cash: Math.round(5 + f.score / 10),
+}));
 
 export const NEW_FIRM_NAMES = ["Amberlynn Capital", "Thistlewood Partners", "Corvid Capital Partners", "Havenrock Equity", "Pemberton & Vale"];

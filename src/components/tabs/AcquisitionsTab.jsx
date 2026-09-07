@@ -1,10 +1,12 @@
 import { ArrowUpRight, ArrowDownRight, Clock, AlertTriangle } from "lucide-react";
 import { PALETTE } from "../../data/palette.js";
 import { ACQUISITION_POOL } from "../../data/acquisitions.js";
+import { BANKS } from "../../data/banks.js";
 
 export default function AcquisitionsTab({
   isDirectorial, staff, acquisitionSlots, expandedCompanyId, setExpandedCompanyId,
-  proposalChoices, chooseProposal, passOn, portfolio, quarter,
+  proposalChoices, pickProposal, passOn, selectedProposal, bankRejections, requestFinancing,
+  portfolio, quarter,
 }) {
   return (
     <div>
@@ -16,6 +18,10 @@ export default function AcquisitionsTab({
           const c = ACQUISITION_POOL[idx];
           const expanded = expandedCompanyId === c.id;
           const chosen = proposalChoices[c.id];
+          const selectedOptionId = isDirectorial ? selectedProposal[c.id] : null;
+          const rejections = bankRejections[c.id] || [];
+          const investedEntry = chosen ? portfolio.find((p) => p.id === c.id) : null;
+          const awaitingBank = isDirectorial && selectedOptionId && !chosen;
           return (
             <div key={c.id} className="p-4 rounded" style={{ backgroundColor: PALETTE.panel, border: `1px solid ${PALETTE.line}` }}>
               <p className="text-sm mb-1" style={{ fontFamily: "'Fraunces', serif", fontWeight: 600 }}>{c.name}</p>
@@ -33,15 +39,37 @@ export default function AcquisitionsTab({
                   <div className="mt-3 flex flex-col gap-2">
                     <p style={{ color: PALETTE.textMuted }}>{isDirectorial ? "Structurer l'investissement :" : `Proposer à ${staff.superior} :`}</p>
                     {c.proposals.map((opt) => {
-                      const isSel = chosen === opt.id;
+                      const isSel = isDirectorial ? selectedOptionId === opt.id : chosen === opt.id;
+                      const showFeedback = isDirectorial ? (chosen === opt.id) : isSel;
                       return (
-                        <button key={opt.id} onClick={() => chooseProposal(idx, opt)} disabled={!!chosen} className="text-left p-2 rounded" style={{ backgroundColor: isSel ? (opt.correct ? "rgba(91,140,136,0.15)" : "rgba(166,68,76,0.15)") : PALETTE.panel, border: `1px solid ${isSel ? (opt.correct ? PALETTE.teal : PALETTE.crimson) : PALETTE.line}`, opacity: chosen && !isSel ? 0.5 : 1 }}>
+                        <button key={opt.id} onClick={() => pickProposal(idx, opt)} disabled={!!chosen} className="text-left p-2 rounded" style={{ backgroundColor: isSel ? (opt.correct ? "rgba(91,140,136,0.15)" : "rgba(166,68,76,0.15)") : PALETTE.panel, border: `1px solid ${isSel ? (opt.correct ? PALETTE.teal : PALETTE.crimson) : PALETTE.line}`, opacity: chosen && !isSel ? 0.5 : 1 }}>
                           <span>{opt.label}</span>
-                          {isSel && <p className="mt-1" style={{ color: PALETTE.textMuted }}>{opt.feedback} <span style={{ color: PALETTE.gold }}>+{opt.xp} XP</span></p>}
+                          {showFeedback && <p className="mt-1" style={{ color: PALETTE.textMuted }}>{opt.feedback} <span style={{ color: PALETTE.gold }}>+{opt.xp} XP</span></p>}
                         </button>
                       );
                     })}
                   </div>
+                  {awaitingBank && (
+                    <div className="mt-3 pt-3 flex flex-col gap-2" style={{ borderTop: `1px solid ${PALETTE.line}` }}>
+                      <p style={{ color: PALETTE.textMuted }}>Solliciter une banque pour financer la dette :</p>
+                      {BANKS.map((bank) => {
+                        const wasRejected = rejections.includes(bank.id);
+                        return (
+                          <button key={bank.id} onClick={() => requestFinancing(idx, bank.id)} disabled={wasRejected} className="text-left p-2 rounded" style={{ backgroundColor: PALETTE.panel, border: `1px solid ${wasRejected ? PALETTE.crimson : PALETTE.line}`, opacity: wasRejected ? 0.5 : 1 }}>
+                            <div className="flex items-center justify-between">
+                              <span>{bank.name}</span>
+                              <span style={{ color: PALETTE.textMuted, fontFamily: "'IBM Plex Mono', monospace" }}>{(bank.rate * 100).toFixed(1)}%</span>
+                            </div>
+                            <p className="mt-0.5" style={{ color: PALETTE.textMuted }}>{bank.profile} · levier max {Math.round(bank.maxLeverage * 100)}%</p>
+                            {wasRejected && <p className="mt-0.5" style={{ color: PALETTE.crimson }}>Refusé : levier demandé trop élevé pour cette banque.</p>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {investedEntry && (
+                    <p className="mt-2 pt-2" style={{ color: PALETTE.teal, borderTop: `1px solid ${PALETTE.line}` }}>Financé via {investedEntry.bankName}.</p>
+                  )}
                 </div>
               )}
               <button onClick={() => passOn(idx)} className="w-full px-3 py-1.5 rounded text-xs" style={{ backgroundColor: PALETTE.panelAlt, color: PALETTE.textMuted }}>Ignorer / cible suivante</button>
@@ -61,6 +89,7 @@ export default function AcquisitionsTab({
                 <span className="text-sm">{p.name}</span>
                 <span className="text-xs flex items-center gap-1" style={{ color: delta >= 0 ? PALETTE.teal : PALETTE.crimson, fontFamily: "'IBM Plex Mono', monospace" }}>{delta >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />} {p.value} M$</span>
               </div>
+              {p.bankName && <p className="text-xs mt-0.5" style={{ color: PALETTE.textMuted }}>Financé via {p.bankName}</p>}
               <div className="mt-1.5">
                 {pending && (
                   <span className="text-xs flex items-center gap-1" style={{ color: PALETTE.textMuted }}>

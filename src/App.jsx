@@ -4,6 +4,7 @@ import { RANKS, DIRECTORIAL_RANK } from "./data/ranks.js";
 import { FIRM_ID, FIRMS_INITIAL, CEO_NAMES, NEW_FIRM_NAMES, getStaff } from "./data/firms.js";
 import { SCENARIOS } from "./data/scenarios.js";
 import { ACQUISITION_POOL } from "./data/acquisitions.js";
+import { BANKS } from "./data/banks.js";
 import { FORMULAS } from "./data/formulas.js";
 import { SEED_MAIL } from "./data/mail.js";
 import { getRankIndex, clamp, randInt } from "./lib/utils.js";
@@ -17,6 +18,7 @@ import OverviewTab from "./components/tabs/OverviewTab.jsx";
 import CasesTab from "./components/tabs/CasesTab.jsx";
 import AcquisitionsTab from "./components/tabs/AcquisitionsTab.jsx";
 import BankTab from "./components/tabs/BankTab.jsx";
+import FinancesTab from "./components/tabs/FinancesTab.jsx";
 import CareerTab from "./components/tabs/CareerTab.jsx";
 import MarketTab from "./components/tabs/MarketTab.jsx";
 import JobsTab from "./components/tabs/JobsTab.jsx";
@@ -51,6 +53,8 @@ export default function App() {
   const [portfolio, setPortfolio] = useState([]);
   const [expandedCompanyId, setExpandedCompanyId] = useState(null);
   const [proposalChoices, setProposalChoices] = useState({});
+  const [selectedProposal, setSelectedProposal] = useState({});
+  const [bankRejections, setBankRejections] = useState({});
 
   const [dryPowder, setDryPowder] = useState(40);
   const [loanLog, setLoanLog] = useState([]);
@@ -114,10 +118,13 @@ export default function App() {
   }
 
   function cycleSlot(usedIdx) {
-    const used = new Set([...investedIds, ACQUISITION_POOL[usedIdx].id]);
+    const usedCompanyId = ACQUISITION_POOL[usedIdx].id;
+    const used = new Set([...investedIds, usedCompanyId]);
     const available = ACQUISITION_POOL.map((_, i) => i).filter((i) => !used.has(ACQUISITION_POOL[i].id));
     setAcquisitionSlots((slots) => slots.map((s) => (s !== usedIdx ? s : (available.length ? available[randInt(0, available.length - 1)] : s))));
     setExpandedCompanyId(null);
+    setSelectedProposal((p) => { const n = { ...p }; delete n[usedCompanyId]; return n; });
+    setBankRejections((r) => { const n = { ...r }; delete n[usedCompanyId]; return n; });
   }
   function passOn(poolIdx) { cycleSlot(poolIdx); }
 
@@ -139,28 +146,52 @@ export default function App() {
     };
   }
 
-  function chooseProposal(poolIdx, option) {
+  // Étape A (multi-banques) : au rang VP+, choisir une structure ne finance plus le deal
+  // directement — il faut ensuite trouver une banque dont la politique de levier l'accepte.
+  // Le joueur peut retenter une autre banque si la première refuse.
+  function pickProposal(poolIdx, option) {
     const company = ACQUISITION_POOL[poolIdx];
     if (proposalChoices[company.id]) return;
-    setProposalChoices((p) => ({ ...p, [company.id]: option.id }));
     if (!isDirectorial) {
+      setProposalChoices((p) => ({ ...p, [company.id]: option.id }));
       setXp((v) => v + option.xp);
       return;
     }
+    setSelectedProposal((p) => ({ ...p, [company.id]: option.id }));
+    setBankRejections((r) => ({ ...r, [company.id]: [] }));
+  }
+
+  function requestFinancing(poolIdx, bankId) {
+    const company = ACQUISITION_POOL[poolIdx];
+    if (proposalChoices[company.id]) return;
+    const optionId = selectedProposal[company.id];
+    const option = company.proposals.find((o) => o.id === optionId);
+    const bank = BANKS.find((b) => b.id === bankId);
+    if (!option || !bank) return;
+
+    if (option.leverage > bank.maxLeverage) {
+      setBankRejections((r) => ({ ...r, [company.id]: [...(r[company.id] || []), bankId] }));
+      return;
+    }
+
     const price = company.ebitda * option.multiple;
     const equity = +(price * (1 - option.leverage)).toFixed(1);
     const debt = +(price * option.leverage).toFixed(1);
     if (equity > dryPowder) {
-      setLoanLog((l) => [`T${quarter} — Investissement dans ${company.name} refusé : capital disponible insuffisant (${dryPowder} M$ requis: ${equity} M$).`, ...l]);
+      setLoanLog((l) => [{ id: `loan-${Date.now()}`, quarter, bankId: bank.id, bankName: bank.name, rate: bank.rate, amount: debt, purpose: company.name, rejected: true, reason: "capital disponible insuffisant" }, ...l]);
+      setSelectedProposal((p) => { const n = { ...p }; delete n[company.id]; return n; });
+      setBankRejections((r) => { const n = { ...r }; delete n[company.id]; return n; });
       return;
     }
+
+    setProposalChoices((p) => ({ ...p, [company.id]: option.id }));
     setDryPowder((d) => +(d - equity).toFixed(1));
+    setFirms((prev) => prev.map((f) => (f.id === currentFirmId ? { ...f, corporateDebt: +((f.corporateDebt || 0) + debt).toFixed(1), score: clamp(f.score + (option.correct ? 4 : -3), 5, 98) } : f)));
     const pendingRisk = rollHiddenRisk(company, option);
-    setPortfolio((p) => [...p, { id: company.id, name: company.name, invested: price, value: price, quarterAcquired: quarter, pendingRisk, resolvedRisk: null }]);
+    setPortfolio((p) => [...p, { id: company.id, name: company.name, invested: price, value: price, quarterAcquired: quarter, pendingRisk, resolvedRisk: null, bankName: bank.name }]);
     setInvestedIds((ids) => [...ids, company.id]);
-    setFirms((prev) => prev.map((f) => (f.id === currentFirmId ? { ...f, score: clamp(f.score + (option.correct ? 4 : -3), 5, 98) } : f)));
     setDealsReviewed((v) => v + 1);
-    if (option.leverage > 0) setLoanLog((l) => [`T${quarter} — Prêt de ${debt} M$ pour l'acquisition de ${company.name} (levier ${Math.round(option.leverage * 100)}%).`, ...l]);
+    setLoanLog((l) => [{ id: `loan-${Date.now()}`, quarter, bankId: bank.id, bankName: bank.name, rate: bank.rate, amount: debt, purpose: company.name, rejected: false }, ...l]);
   }
 
   function launchTakeover(targetId) {
@@ -171,7 +202,7 @@ export default function App() {
     const success = Math.random() < chance;
     if (success) {
       const pickedName = NEW_FIRM_NAMES[randInt(0, NEW_FIRM_NAMES.length - 1)];
-      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-") + "-" + quarter, name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false };
+      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-") + "-" + quarter, name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false, corporateDebt: 0, lpCommitted: randInt(80, 150), cash: randInt(5, 15) };
       setFirms((prev) => prev.filter((f) => f.id !== targetId).map((f) => (f.id === currentFirmId ? { ...f, score: clamp(f.score + Math.round(target.score / 4), 5, 98), employees: f.employees + target.employees } : f)).concat(newEntrant));
       setDryPowder((d) => +(d - cost).toFixed(1));
       setXp((v) => v + 40);
@@ -207,6 +238,13 @@ export default function App() {
       if (f.id === currentFirmId) {
         const updated = { ...f };
         if (f.public) updated.stockPrice = Math.max(1, +(f.stockPrice * (1 + randInt(-6, 6) / 100)).toFixed(2));
+        // AUM et trésorerie évoluent avec la performance : une firme qui score bien lève plus
+        // facilement, une firme qui score mal voit son AUM s'éroder (rachats/non-réengagements).
+        const lpCommitted = f.lpCommitted || 0;
+        updated.lpCommitted = Math.max(50, Math.round(lpCommitted * (1 + (f.score - 50) / 2000)));
+        const feeRevenue = +(lpCommitted * 0.02 / 4).toFixed(1);
+        const opex = +(f.employees * 0.05).toFixed(1);
+        updated.cash = Math.max(0, +((f.cash || 0) + feeRevenue - opex).toFixed(1));
         return updated;
       }
       const updated = { ...f, score: clamp(f.score + randInt(-4, 4), 8, 96), employees: f.employees + randInt(0, 2) };
@@ -219,7 +257,7 @@ export default function App() {
     if (q % 2 === 0 && sorted.length >= 2) {
       const target = sorted[0], acquirer = sorted[1];
       const pickedName = NEW_FIRM_NAMES[randInt(0, NEW_FIRM_NAMES.length - 1)];
-      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-"), name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false };
+      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-"), name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false, corporateDebt: 0, lpCommitted: randInt(80, 150), cash: randInt(5, 15) };
       const merged = { ...acquirer, score: clamp(Math.round((acquirer.score + target.score) / 2) + 5, 10, 96), employees: acquirer.employees + target.employees };
       working = working.filter((f) => f.id !== target.id && f.id !== acquirer.id);
       working.push(merged, newEntrant);
@@ -298,7 +336,7 @@ export default function App() {
   return (
     <div className="w-full min-h-screen flex flex-col" style={{ backgroundColor: PALETTE.bg, color: PALETTE.textPrimary, fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}>
       <Header playerName={playerName} currentFirm={currentFirm} staff={staff} currentRank={currentRank} playerPosition={playerPosition} firmsCount={firms.length} quarter={quarter} advanceQuarter={advanceQuarter} />
-      <NavTabs tab={tab} onSelect={selectTab} />
+      <NavTabs tab={tab} onSelect={selectTab} isDirectorial={isDirectorial} />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-6 py-8">
         {tab === "apercu" && (
@@ -321,12 +359,17 @@ export default function App() {
           <AcquisitionsTab
             isDirectorial={isDirectorial} staff={staff} acquisitionSlots={acquisitionSlots}
             expandedCompanyId={expandedCompanyId} setExpandedCompanyId={setExpandedCompanyId}
-            proposalChoices={proposalChoices} chooseProposal={chooseProposal} passOn={passOn}
+            proposalChoices={proposalChoices} pickProposal={pickProposal} passOn={passOn}
+            selectedProposal={selectedProposal} bankRejections={bankRejections} requestFinancing={requestFinancing}
             portfolio={portfolio} quarter={quarter}
           />
         )}
 
-        {tab === "banque" && <BankTab dryPowder={dryPowder} isDirectorial={isDirectorial} loanLog={loanLog} />}
+        {tab === "banque" && <BankTab dryPowder={dryPowder} isDirectorial={isDirectorial} loanLog={loanLog} corporateDebt={currentFirm.corporateDebt || 0} />}
+
+        {tab === "finances" && isDirectorial && (
+          <FinancesTab currentFirm={currentFirm} dryPowder={dryPowder} portfolio={portfolio} quarter={quarter} />
+        )}
 
         {tab === "carriere" && <CareerTab playerName={playerName} year={year} careerHistory={careerHistory} grossTotal={grossTotal} netTotal={netTotal} />}
 
