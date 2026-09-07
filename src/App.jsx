@@ -13,7 +13,7 @@ import { maybeGenerateCeoOffer } from "./data/ceo.js";
 import { FOUNDER_SEED_CAPITAL, attemptFundraise as attemptFundraiseRoll } from "./data/founder.js";
 import { getRankIndex, clamp, randInt } from "./lib/utils.js";
 import { loadSave, persistSave } from "./lib/storage.js";
-import { computeCareerProfile } from "./lib/career.js";
+import { computeCareerProfile, computeEndgamePath } from "./lib/career.js";
 import { getCompForRole } from "./lib/compensation.js";
 
 import NameGate from "./components/NameGate.jsx";
@@ -125,6 +125,7 @@ export default function App() {
   const isPartner = rankIndex === 4;
   const ownFirm = ownFirmId ? firms.find((f) => f.id === ownFirmId) : null;
   const careerProfile = computeCareerProfile({ skills, reputation, xp, dealsReviewed, portfolio });
+  const endgamePath = computeEndgamePath({ rankIndex, ceoFirmId, ownFirmId, careerHistory });
 
   const selectedScenario = SCENARIOS.find((s) => s.id === selectedScenarioId);
   const chosenOptionId = selectedScenarioId ? scenarioChoices[selectedScenarioId] : null;
@@ -159,6 +160,25 @@ export default function App() {
     setBankRejections((r) => { const n = { ...r }; delete n[usedCompanyId]; return n; });
   }
   function passOn(poolIdx) { cycleSlot(poolIdx); }
+
+  const MAX_ADD_ONS = 2;
+
+  // Section 8 de l'extension carrière — buy-and-build : une participation stabilisée (son risque
+  // caché, s'il y en avait un, est déjà résolu) peut acquérir une cible complémentaire plus petite,
+  // créant de la valeur par synergies plutôt que par un nouveau risque de même nature.
+  function addBoltOn(portfolioIndex) {
+    const pos = portfolio[portfolioIndex];
+    if (!pos) return;
+    const stillPending = pos.pendingRisk && !pos.resolvedRisk;
+    if (stillPending || (pos.addOnsCount || 0) >= MAX_ADD_ONS) return;
+    const cost = +(pos.value * 0.25).toFixed(1);
+    if (cost > dryPowder) return;
+    setDryPowder((d) => +(d - cost).toFixed(1));
+    const uplift = 0.15 + Math.random() * 0.15;
+    setPortfolio((p) => p.map((x, i) => (i === portfolioIndex ? { ...x, value: Math.max(1, Math.round(x.value * (1 + uplift))), addOnsCount: (x.addOnsCount || 0) + 1 } : x)));
+    setFirms((prev) => prev.map((f) => (f.id === currentFirmId ? { ...f, score: clamp(f.score + 2, 5, 98) } : f)));
+    setNews((n) => [`T${quarter} — ${pos.name} réalise une acquisition complémentaire (bolt-on) pour ${cost} M$, renforçant sa création de valeur.`, ...n]);
+  }
 
   // Priorité 1 — risques cachés post-acquisition : une bonne proposition réduit la probabilité
   // qu'un risque caché se matérialise, mais ne l'annule jamais ; une structure agressive l'augmente.
@@ -478,7 +498,7 @@ export default function App() {
             expandedCompanyId={expandedCompanyId} setExpandedCompanyId={setExpandedCompanyId}
             proposalChoices={proposalChoices} pickProposal={pickProposal} passOn={passOn}
             selectedProposal={selectedProposal} bankRejections={bankRejections} requestFinancing={requestFinancing}
-            portfolio={portfolio} quarter={quarter}
+            portfolio={portfolio} quarter={quarter} dryPowder={dryPowder} addBoltOn={addBoltOn}
           />
         )}
 
@@ -496,7 +516,7 @@ export default function App() {
           />
         )}
 
-        {tab === "carriere" && <CareerTab playerName={playerName} year={year} careerHistory={careerHistory} grossTotal={grossTotal} netTotal={netTotal} />}
+        {tab === "carriere" && <CareerTab playerName={playerName} year={year} careerHistory={careerHistory} grossTotal={grossTotal} netTotal={netTotal} endgamePath={endgamePath} />}
 
         {tab === "marche" && (
           <MarketTab marketSorted={marketSorted} currentFirm={currentFirm} currentFirmId={currentFirmId} rankIndex={rankIndex} goPublic={goPublic} launchTakeover={launchTakeover} ceoFirmId={ceoFirmId} ownFirmId={ownFirmId} playerName={playerName} />

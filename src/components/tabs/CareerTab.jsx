@@ -2,10 +2,13 @@ import { PALETTE } from "../../data/palette.js";
 import { fmtMoney } from "../../lib/utils.js";
 import { getCompForRole } from "../../lib/compensation.js";
 
-export default function CareerTab({ playerName, year, careerHistory, grossTotal, netTotal }) {
+export default function CareerTab({ playerName, year, careerHistory, grossTotal, netTotal, endgamePath }) {
   return (
     <div className="max-w-2xl">
       <p className="text-xs mb-4" style={{ color: PALETTE.textMuted }}>Parcours de {playerName} — Année {year}</p>
+      {endgamePath && (
+        <div className="mb-4 p-3 rounded text-xs" style={{ backgroundColor: PALETTE.panelAlt, border: `1px solid ${PALETTE.gold}`, color: PALETTE.gold }}>{endgamePath.label}</div>
+      )}
       <div className="flex flex-col gap-2 mb-6">
         {careerHistory.map((h, i) => { const r = getCompForRole(h.role); const gross = r.salary + r.bonus, net = Math.round(gross * 0.62); return (
           <div key={i} className="p-3 rounded flex items-center justify-between flex-wrap gap-2" style={{ backgroundColor: PALETTE.panel }}>

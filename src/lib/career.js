@@ -27,3 +27,29 @@ function computeRiskManagement(portfolio, dueDiligenceSkill) {
   const ratio = clean / portfolio.length;
   return clamp(Math.round(dueDiligenceSkill * 0.5 + ratio * 100 * 0.5), 0, 100);
 }
+
+// Section 9 de l'extension carrière : un simple descripteur narratif de la trajectoire suivie,
+// jamais un écran de fin — le jeu reste une simulation ouverte, la question est "que fait-on
+// maintenant", pas "la partie est terminée".
+export function computeEndgamePath({ rankIndex, ceoFirmId, ownFirmId, careerHistory }) {
+  if (ownFirmId) {
+    const founderEntryIndex = careerHistory.findIndex((h) => h.role === "Fondateur");
+    const precededByCarlOrOther = founderEntryIndex > 0;
+    return precededByCarlOrOther
+      ? { key: "hybride", label: "Hybride — carrière employée puis fondateur de sa propre firme" }
+      : { key: "entrepreneur", label: "Entrepreneur — a bâti sa propre firme dès le départ" };
+  }
+  if (ceoFirmId) {
+    const ceoIndex = careerHistory.findIndex((h) => h.role === "CEO");
+    const priorFirm = ceoIndex > 0 ? careerHistory[ceoIndex - 1].firmName : null;
+    const ceoFirmName = ceoIndex >= 0 ? careerHistory[ceoIndex].firmName : null;
+    const external = priorFirm && ceoFirmName && priorFirm !== ceoFirmName;
+    return external
+      ? { key: "externe", label: "Externe — recruté(e) confidentiellement comme CEO d'un autre fonds" }
+      : { key: "traditionnel", label: "Traditionnel — promu(e) CEO au sein de sa propre firme" };
+  }
+  if (rankIndex === 4) {
+    return { key: "partner", label: "Partner — la suite de votre carrière reste à écrire" };
+  }
+  return null;
+}

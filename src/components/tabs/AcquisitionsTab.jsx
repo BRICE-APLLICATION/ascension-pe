@@ -3,10 +3,12 @@ import { PALETTE } from "../../data/palette.js";
 import { ACQUISITION_POOL } from "../../data/acquisitions.js";
 import { BANKS } from "../../data/banks.js";
 
+const MAX_ADD_ONS = 2;
+
 export default function AcquisitionsTab({
   isDirectorial, staff, acquisitionSlots, expandedCompanyId, setExpandedCompanyId,
   proposalChoices, pickProposal, passOn, selectedProposal, bankRejections, requestFinancing,
-  portfolio, quarter,
+  portfolio, quarter, dryPowder, addBoltOn,
 }) {
   return (
     <div>
@@ -105,6 +107,17 @@ export default function AcquisitionsTab({
                   <span className="text-xs" style={{ color: PALETTE.textMuted }}>Aucun risque caché détecté à ce jour.</span>
                 )}
               </div>
+              {isDirectorial && (() => {
+                const addOnsCount = p.addOnsCount || 0;
+                const cost = +(p.value * 0.25).toFixed(1);
+                const maxedOut = addOnsCount >= MAX_ADD_ONS;
+                const disabled = pending || maxedOut || cost > dryPowder;
+                return (
+                  <button onClick={() => addBoltOn(i)} disabled={disabled} className="mt-2 px-2 py-1 rounded text-xs" style={{ backgroundColor: PALETTE.panelAlt, color: disabled ? PALETTE.textMuted : PALETTE.gold, opacity: disabled ? 0.6 : 1 }}>
+                    {maxedOut ? "Buy-and-build complet" : `Acquisition complémentaire (bolt-on) — ${cost} M$`}
+                  </button>
+                );
+              })()}
             </div>
           );
         })}</div>
