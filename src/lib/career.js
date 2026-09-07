@@ -3,9 +3,11 @@ import { clamp } from "./utils.js";
 // Dimensions de carrière dérivées de la couche fine (compétences) et de la réputation par audience.
 // Jamais montrées en brut au joueur — elles alimentent des déclencheurs narratifs (offres CEO,
 // capacité de fundraising) calculés en arrière-plan, conformément à la section 12 de l'extension carrière.
-export function computeCareerProfile({ skills, reputation, xp, dealsReviewed, portfolio }) {
+export function computeCareerProfile({ skills, reputation, xp, dealsReviewed, portfolio, relationshipWithSuperior }) {
   const investmentJudgment = avg([skills.modeling, skills.valuation, skills.dueDiligence]);
-  const leadership = avg([skills.leadership, reputation.entrepreneurs]);
+  // La relation avec le supérieur direct actuel pèse dans le jugement de leadership : un mentor qui
+  // vous apprécie plaide en votre faveur, un mentor qui se méfie de vous freine votre progression.
+  const leadership = avg([skills.leadership, reputation.entrepreneurs, relationshipWithSuperior ?? 50]);
   const networking = avg([skills.networking, reputation.lps, reputation.rivals]);
   const riskManagement = computeRiskManagement(portfolio, skills.dueDiligence);
   const financialPerformance = clamp(Math.round(xp / 8), 0, 100);

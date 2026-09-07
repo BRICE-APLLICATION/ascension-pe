@@ -14,6 +14,7 @@ import { FOUNDER_SEED_CAPITAL, attemptFundraise as attemptFundraiseRoll } from "
 import { POSTURES, computePlayerLeverage, computeFirmFlexibility, computeNegotiationRound, BAND_TEXTS } from "./data/negotiation.js";
 import { DD_BUDGET, investigateCategory } from "./data/duediligence.js";
 import { outcomeFromRisk } from "./data/thesis.js";
+import { defaultRelationships } from "./data/relationships.js";
 import { getRankIndex, clamp, randInt } from "./lib/utils.js";
 import { loadSave, persistSave } from "./lib/storage.js";
 import { computeCareerProfile, computeEndgamePath } from "./lib/career.js";
@@ -76,6 +77,7 @@ export default function App() {
   const [bankRejections, setBankRejections] = useState({});
   const [ddResults, setDdResults] = useState({});
   const [selectedThesis, setSelectedThesis] = useState({});
+  const [relationships, setRelationships] = useState(defaultRelationships());
 
   const [dryPowder, setDryPowder] = useState(40);
   const [loanLog, setLoanLog] = useState([]);
@@ -106,6 +108,7 @@ export default function App() {
       if (s.scenarioChoices) setScenarioChoices(s.scenarioChoices);
       if (s.proposalChoices) setProposalChoices(s.proposalChoices);
       if (s.ddResults) setDdResults(s.ddResults);
+      if (s.relationships) setRelationships(s.relationships);
       if (s.skills) setSkills(s.skills);
       if (s.reputation) setReputation(s.reputation);
       if (s.ceoFirmId !== undefined) setCeoFirmId(s.ceoFirmId);
@@ -118,8 +121,8 @@ export default function App() {
 
   useEffect(() => {
     if (!loaded || !playerName) return;
-    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResults });
-  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResults]);
+    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResults, relationships });
+  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResults, relationships]);
 
   const rankIndex = getRankIndex(xp);
   const currentRank = RANKS[rankIndex];
@@ -132,7 +135,7 @@ export default function App() {
   const isCeo = ceoFirmId === currentFirmId;
   const isPartner = rankIndex === 4;
   const ownFirm = ownFirmId ? firms.find((f) => f.id === ownFirmId) : null;
-  const careerProfile = computeCareerProfile({ skills, reputation, xp, dealsReviewed, portfolio });
+  const careerProfile = computeCareerProfile({ skills, reputation, xp, dealsReviewed, portfolio, relationshipWithSuperior: relationships[staff.superior] });
   const endgamePath = computeEndgamePath({ rankIndex, ceoFirmId, ownFirmId, careerHistory });
 
   const selectedScenario = SCENARIOS.find((s) => s.id === selectedScenarioId);
@@ -154,6 +157,13 @@ export default function App() {
       if (scenario.reputationAudience) {
         const delta = Math.round(option.impact / 2);
         setReputation((r) => ({ ...r, [scenario.reputationAudience]: clamp(r[scenario.reputationAudience] + delta, 0, 100) }));
+      }
+      // La relation avec le supérieur direct actuel évolue avec chaque décision prise sous sa
+      // supervision — uniquement chez Carl Capital, où les personnages sont des individus suivis
+      // d'un rang à l'autre plutôt que des noms générés à la volée pour chaque fonds concurrent.
+      if (currentFirmId === FIRM_ID) {
+        const delta = Math.round(option.impact / 2);
+        setRelationships((r) => ({ ...r, [staff.superior]: clamp((r[staff.superior] ?? 50) + delta, 0, 100) }));
       }
     }
   }
@@ -339,10 +349,29 @@ export default function App() {
       const target = others[randInt(0, others.length - 1)];
       setMail((m) => [{ id: `mail-${Date.now()}`, from: `${CEO_NAMES[target.id] || "Recrutement"} — ${target.name}`, subject: `Une opportunité chez ${target.name}`, body: "Nous suivons votre parcours avec intérêt et aurions un poste à vous proposer.", type: "offer", firmId: target.id }, ...m]);
     } else {
+      const fromRival = Math.random() < 0.5;
+      if (!fromRival && currentFirmId === FIRM_ID) {
+        const rel = relationships[staff.superior] ?? 50;
+        // Une relation forte avec le supérieur direct actuel se traduit occasionnellement par une
+        // vraie opportunité (mentorat) plutôt qu'un simple message d'ambiance — la relation
+        // "influence les opportunités offertes", pas seulement le ton du courrier.
+        if (rel >= 75 && Math.random() < 0.25) {
+          setXp((v) => v + 15);
+          setMail((m) => [{ id: `mail-${Date.now()}-2`, from: `${staff.superior} — ${currentFirm.name}`, subject: "Une opportunité de visibilité", body: `${staff.superior} vous met en avant auprès du comité sur un dossier stratégique — un vrai coup de pouce pour la suite.`, type: "internal" }, ...m]);
+          return;
+        }
+        const templates = rel >= 65
+          ? [{ subject: "Bon trimestre", body: `${staff.superior} vous félicite pour la qualité de votre travail récent.` }, { subject: "Merci pour votre aide", body: "Votre rigueur sur le dernier dossier n'est pas passée inaperçue." }]
+          : rel <= 35
+            ? [{ subject: "À revoir", body: `${staff.superior} attend plus de rigueur sur les prochains dossiers.` }, { subject: "Point de vigilance", body: "Quelques réserves ont été exprimées sur votre dernière analyse." }]
+            : [{ subject: "Bon trimestre", body: "Continuez sur cette lancée." }, { subject: "Question rapide", body: "Peux-tu regarder le dossier en cours cet après-midi ?" }];
+        const t = templates[randInt(0, templates.length - 1)];
+        setMail((m) => [{ id: `mail-${Date.now()}-2`, from: `${staff.superior} — ${currentFirm.name}`, subject: t.subject, body: t.body, type: "internal" }, ...m]);
+        return;
+      }
       const templates = [{ subject: "Bon trimestre", body: "Continuez sur cette lancée." }, { subject: "Question rapide", body: "Peux-tu regarder le dossier en cours cet après-midi ?" }];
       const t = templates[randInt(0, templates.length - 1)];
-      const fromRival = Math.random() < 0.5;
-      setMail((m) => [{ id: `mail-${Date.now()}-2`, from: fromRival ? `${staff.rival} — ${currentFirm.name}` : `${staff.superior} — ${currentFirm.name}`, subject: t.subject, body: t.body, type: "internal" }, ...m]);
+      setMail((m) => [{ id: `mail-${Date.now()}-2`, from: `${staff.rival} — ${currentFirm.name}`, subject: t.subject, body: t.body, type: "internal" }, ...m]);
     }
   }
 
@@ -623,6 +652,7 @@ export default function App() {
             currentFirm={currentFirm} rankIndex={rankIndex} currentRank={currentRank} nextRank={nextRank}
             progressPct={progressPct} xp={xp} dealsReviewed={dealsReviewed} completedCount={completedCount}
             visibleScenarios={visibleScenarios} staff={staff} setTab={setTab} setXp={setXp} playerName={playerName} reputation={reputation} isCeo={isCeo}
+            showRelationship={currentFirmId === FIRM_ID} relationshipWithSuperior={relationships[staff.superior] ?? 50}
           />
         )}
 

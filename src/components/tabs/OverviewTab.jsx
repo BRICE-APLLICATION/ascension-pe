@@ -8,6 +8,7 @@ import { clamp } from "../../lib/utils.js";
 export default function OverviewTab({
   currentFirm, rankIndex, currentRank, nextRank, progressPct, xp, dealsReviewed,
   completedCount, visibleScenarios, staff, setTab, setXp, playerName, reputation, isCeo,
+  relationshipWithSuperior, showRelationship,
 }) {
   const comp = isCeo ? CEO_COMP : currentRank;
   return (
@@ -69,6 +70,13 @@ export default function OverviewTab({
           <div className="p-4 rounded flex items-center gap-3" style={{ backgroundColor: PALETTE.panel }}><BarChart3 size={18} color={PALETTE.crimson} /><div><p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "1.1rem" }}>{currentFirm.score}</p><p className="text-xs" style={{ color: PALETTE.textMuted }}>Score {currentFirm.name}</p></div></div>
         </div>
         <button onClick={() => setTab("cas")} className="mt-2 self-start px-4 py-2 rounded text-sm flex items-center gap-2" style={{ backgroundColor: PALETTE.gold, color: PALETTE.bg }}>Lancer le prochain cas <ChevronRight size={16} /></button>
+
+        {showRelationship && (
+          <div className="p-4 rounded" style={{ backgroundColor: PALETTE.panel }}>
+            <div className="flex justify-between text-xs mb-1"><span style={{ color: PALETTE.textMuted }}>Relation avec {staff.superior}</span><span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{relationshipWithSuperior}</span></div>
+            <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: PALETTE.line }}><div className="h-full" style={{ width: `${relationshipWithSuperior}%`, backgroundColor: PALETTE.gold }} /></div>
+          </div>
+        )}
 
         <div className="p-4 rounded" style={{ backgroundColor: PALETTE.panel }}>
           <p className="text-xs mb-3" style={{ color: PALETTE.textMuted }}>Votre réputation, par audience</p>
