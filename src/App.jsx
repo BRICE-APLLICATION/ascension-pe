@@ -672,7 +672,7 @@ export default function App() {
     const equityValue = useEquity ? Math.round(totalBonus * 0.3) : 0;
     setCurrentFirmId(negotiation.firmId);
     setYear((y) => y + 1);
-    setCareerHistory((h) => [...h, { firmName: firm.name, role: currentRank.name, year: year + 1, negotiatedSalary: negotiation.baseSalary, negotiatedBonusCash: bonusCash, equityValue, equityFirmId: useEquity ? negotiation.firmId : null }]);
+    setCareerHistory((h) => [...h, { firmName: firm.name, role: currentRank.name, year: year + 1, negotiatedSalary: negotiation.baseSalary, negotiatedBonusCash: bonusCash, equityValue, equityInitialValue: equityValue, equityFirmId: useEquity ? negotiation.firmId : null }]);
     setNews((n) => [`T${quarter} — ${playerName} rejoint ${firm.name} au poste de ${currentRank.name}, après négociation.`, ...n]);
     setApplicationResult({ success: true, message: `Poste confirmé chez ${firm.name}, aux conditions négociées.` });
     setNegotiation(null);
