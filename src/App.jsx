@@ -1,0 +1,355 @@
+import { useState, useEffect } from "react";
+import { PALETTE } from "./data/palette.js";
+import { RANKS, DIRECTORIAL_RANK } from "./data/ranks.js";
+import { FIRM_ID, FIRMS_INITIAL, CEO_NAMES, NEW_FIRM_NAMES, getStaff } from "./data/firms.js";
+import { SCENARIOS } from "./data/scenarios.js";
+import { ACQUISITION_POOL } from "./data/acquisitions.js";
+import { FORMULAS } from "./data/formulas.js";
+import { SEED_MAIL } from "./data/mail.js";
+import { getRankIndex, clamp, randInt } from "./lib/utils.js";
+import { loadSave, persistSave } from "./lib/storage.js";
+
+import NameGate from "./components/NameGate.jsx";
+import Header from "./components/Header.jsx";
+import NavTabs from "./components/NavTabs.jsx";
+import GlossaryFooter from "./components/GlossaryFooter.jsx";
+import OverviewTab from "./components/tabs/OverviewTab.jsx";
+import CasesTab from "./components/tabs/CasesTab.jsx";
+import AcquisitionsTab from "./components/tabs/AcquisitionsTab.jsx";
+import BankTab from "./components/tabs/BankTab.jsx";
+import CareerTab from "./components/tabs/CareerTab.jsx";
+import MarketTab from "./components/tabs/MarketTab.jsx";
+import JobsTab from "./components/tabs/JobsTab.jsx";
+import MailTab from "./components/tabs/MailTab.jsx";
+import NewsTab from "./components/tabs/NewsTab.jsx";
+import RevisionTab from "./components/tabs/RevisionTab.jsx";
+
+export default function App() {
+  const [loaded, setLoaded] = useState(false);
+  const [playerName, setPlayerName] = useState(null);
+
+  const [tab, setTab] = useState("apercu");
+  const [xp, setXp] = useState(60);
+  const [dealsReviewed, setDealsReviewed] = useState(3);
+  const [selectedScenarioId, setSelectedScenarioId] = useState(null);
+  const [scenarioChoices, setScenarioChoices] = useState({});
+  const [glossaryOpen, setGlossaryOpen] = useState(false);
+  const [revisionCards, setRevisionCards] = useState([0, 1, 2]);
+
+  const [firms, setFirms] = useState(FIRMS_INITIAL);
+  const [currentFirmId, setCurrentFirmId] = useState(FIRM_ID);
+  const [year, setYear] = useState(1);
+  const [quarter, setQuarter] = useState(0);
+  const [careerHistory, setCareerHistory] = useState([{ firmName: "Carl Capital", role: "Analyste", year: 1 }]);
+  const [loggedRankIndex, setLoggedRankIndex] = useState(0);
+  const [news, setNews] = useState(["T0 — Carl Capital entre en activité sur le marché du PE canadien avec 18 employés."]);
+  const [opaWarned, setOpaWarned] = useState(false);
+  const [mail, setMail] = useState(SEED_MAIL);
+
+  const [acquisitionSlots, setAcquisitionSlots] = useState([0, 1, 2]);
+  const [investedIds, setInvestedIds] = useState([]);
+  const [portfolio, setPortfolio] = useState([]);
+  const [expandedCompanyId, setExpandedCompanyId] = useState(null);
+  const [proposalChoices, setProposalChoices] = useState({});
+
+  const [dryPowder, setDryPowder] = useState(40);
+  const [loanLog, setLoanLog] = useState([]);
+
+  const [viewingOfferId, setViewingOfferId] = useState(null);
+  const [applicationResult, setApplicationResult] = useState(null);
+
+  useEffect(() => {
+    const s = loadSave();
+    if (s) {
+      if (s.playerName) setPlayerName(s.playerName);
+      if (s.xp !== undefined) setXp(s.xp);
+      if (s.dealsReviewed !== undefined) setDealsReviewed(s.dealsReviewed);
+      if (s.firms) setFirms(s.firms);
+      if (s.currentFirmId) setCurrentFirmId(s.currentFirmId);
+      if (s.year) setYear(s.year);
+      if (s.quarter !== undefined) setQuarter(s.quarter);
+      if (s.careerHistory) setCareerHistory(s.careerHistory);
+      if (s.loggedRankIndex !== undefined) setLoggedRankIndex(s.loggedRankIndex);
+      if (s.news) setNews(s.news);
+      if (s.opaWarned !== undefined) setOpaWarned(s.opaWarned);
+      if (s.mail) setMail(s.mail);
+      if (s.acquisitionSlots) setAcquisitionSlots(s.acquisitionSlots);
+      if (s.investedIds) setInvestedIds(s.investedIds);
+      if (s.portfolio) setPortfolio(s.portfolio);
+      if (s.dryPowder !== undefined) setDryPowder(s.dryPowder);
+      if (s.loanLog) setLoanLog(s.loanLog);
+      if (s.scenarioChoices) setScenarioChoices(s.scenarioChoices);
+      if (s.proposalChoices) setProposalChoices(s.proposalChoices);
+    }
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!loaded || !playerName) return;
+    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices });
+  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices]);
+
+  const rankIndex = getRankIndex(xp);
+  const currentRank = RANKS[rankIndex];
+  const nextRank = RANKS[rankIndex + 1];
+  const progressPct = nextRank ? clamp(Math.round(((xp - currentRank.threshold) / (nextRank.threshold - currentRank.threshold)) * 100), 0, 100) : 100;
+  const isDirectorial = rankIndex >= DIRECTORIAL_RANK;
+
+  const currentFirm = firms.find((f) => f.id === currentFirmId) || firms[0];
+  const staff = getStaff(currentFirmId, rankIndex, firms);
+
+  const selectedScenario = SCENARIOS.find((s) => s.id === selectedScenarioId);
+  const chosenOptionId = selectedScenarioId ? scenarioChoices[selectedScenarioId] : null;
+  const visibleScenarios = SCENARIOS.filter((s) => s.rankRequired === rankIndex);
+  const completedCount = visibleScenarios.filter((s) => scenarioChoices[s.id]).length;
+
+  function handleChoose(scenario, option) {
+    const already = !!scenarioChoices[scenario.id];
+    setScenarioChoices((s) => ({ ...s, [scenario.id]: option.id }));
+    if (!already) {
+      setXp((v) => v + option.xp);
+      setDealsReviewed((v) => v + 1);
+      setFirms((prev) => prev.map((f) => (f.id === currentFirmId ? { ...f, score: clamp(f.score + option.impact, 5, 98) } : f)));
+    }
+  }
+
+  function cycleSlot(usedIdx) {
+    const used = new Set([...investedIds, ACQUISITION_POOL[usedIdx].id]);
+    const available = ACQUISITION_POOL.map((_, i) => i).filter((i) => !used.has(ACQUISITION_POOL[i].id));
+    setAcquisitionSlots((slots) => slots.map((s) => (s !== usedIdx ? s : (available.length ? available[randInt(0, available.length - 1)] : s))));
+    setExpandedCompanyId(null);
+  }
+  function passOn(poolIdx) { cycleSlot(poolIdx); }
+
+  // Priorité 1 — risques cachés post-acquisition : une bonne proposition réduit la probabilité
+  // qu'un risque caché se matérialise, mais ne l'annule jamais ; une structure agressive l'augmente.
+  function rollHiddenRisk(company, option) {
+    const risk = company.hiddenRisk;
+    if (!risk) return null;
+    const modifier = option.correct ? 0.55 : 1.5;
+    const probability = clamp(risk.baseProbability * modifier, 0.05, 0.9);
+    if (Math.random() >= probability) return null;
+    const [minDelay, maxDelay] = risk.revealDelayRange;
+    const [minImpact, maxImpact] = risk.valueImpactRange;
+    return {
+      description: risk.description,
+      revealQuarter: quarter + randInt(minDelay, maxDelay),
+      impactFraction: minImpact + Math.random() * (maxImpact - minImpact),
+      scoreImpact: risk.scoreImpact,
+    };
+  }
+
+  function chooseProposal(poolIdx, option) {
+    const company = ACQUISITION_POOL[poolIdx];
+    if (proposalChoices[company.id]) return;
+    setProposalChoices((p) => ({ ...p, [company.id]: option.id }));
+    if (!isDirectorial) {
+      setXp((v) => v + option.xp);
+      return;
+    }
+    const price = company.ebitda * option.multiple;
+    const equity = +(price * (1 - option.leverage)).toFixed(1);
+    const debt = +(price * option.leverage).toFixed(1);
+    if (equity > dryPowder) {
+      setLoanLog((l) => [`T${quarter} — Investissement dans ${company.name} refusé : capital disponible insuffisant (${dryPowder} M$ requis: ${equity} M$).`, ...l]);
+      return;
+    }
+    setDryPowder((d) => +(d - equity).toFixed(1));
+    const pendingRisk = rollHiddenRisk(company, option);
+    setPortfolio((p) => [...p, { id: company.id, name: company.name, invested: price, value: price, quarterAcquired: quarter, pendingRisk, resolvedRisk: null }]);
+    setInvestedIds((ids) => [...ids, company.id]);
+    setFirms((prev) => prev.map((f) => (f.id === currentFirmId ? { ...f, score: clamp(f.score + (option.correct ? 4 : -3), 5, 98) } : f)));
+    setDealsReviewed((v) => v + 1);
+    if (option.leverage > 0) setLoanLog((l) => [`T${quarter} — Prêt de ${debt} M$ pour l'acquisition de ${company.name} (levier ${Math.round(option.leverage * 100)}%).`, ...l]);
+  }
+
+  function launchTakeover(targetId) {
+    const target = firms.find((f) => f.id === targetId);
+    const cost = Math.max(5, Math.round(target.score * 0.6));
+    if (cost > dryPowder) { setNews((n) => [`T${quarter} — OPA sur ${target.name} impossible : capital insuffisant (${cost} M$ requis).`, ...n]); return; }
+    const chance = clamp(1 - (target.score - currentFirm.score) / 100, 0.2, 0.95);
+    const success = Math.random() < chance;
+    if (success) {
+      const pickedName = NEW_FIRM_NAMES[randInt(0, NEW_FIRM_NAMES.length - 1)];
+      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-") + "-" + quarter, name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false };
+      setFirms((prev) => prev.filter((f) => f.id !== targetId).map((f) => (f.id === currentFirmId ? { ...f, score: clamp(f.score + Math.round(target.score / 4), 5, 98), employees: f.employees + target.employees } : f)).concat(newEntrant));
+      setDryPowder((d) => +(d - cost).toFixed(1));
+      setXp((v) => v + 40);
+      setNews((n) => [`T${quarter} — OPA réussie : ${currentFirm.name} absorbe ${target.name}. ${newEntrant.name} fait son entrée sur le marché pour maintenir ${firms.length} fonds actifs.`, ...n]);
+    } else {
+      setDryPowder((d) => +(d - cost / 2).toFixed(1));
+      setNews((n) => [`T${quarter} — OPA rejetée : le conseil d'administration de ${target.name} repousse l'offre de ${currentFirm.name}.`, ...n]);
+    }
+  }
+
+  function goPublic() {
+    setFirms((prev) => prev.map((f) => (f.id === currentFirmId ? { ...f, public: true, stockPrice: 8 + f.score / 4 } : f)));
+    setNews((n) => [`T${quarter} — ${currentFirm.name} entre en bourse !`, ...n]);
+  }
+
+  function addRandomMail() {
+    if (Math.random() < 0.5) {
+      const others = firms.filter((f) => f.id !== currentFirmId);
+      const target = others[randInt(0, others.length - 1)];
+      setMail((m) => [{ id: `mail-${Date.now()}`, from: `${CEO_NAMES[target.id] || "Recrutement"} — ${target.name}`, subject: `Une opportunité chez ${target.name}`, body: "Nous suivons votre parcours avec intérêt et aurions un poste à vous proposer.", type: "offer", firmId: target.id }, ...m]);
+    } else {
+      const templates = [{ subject: "Bon trimestre", body: "Continuez sur cette lancée." }, { subject: "Question rapide", body: "Peux-tu regarder le dossier en cours cet après-midi ?" }];
+      const t = templates[randInt(0, templates.length - 1)];
+      const fromRival = Math.random() < 0.5;
+      setMail((m) => [{ id: `mail-${Date.now()}-2`, from: fromRival ? `${staff.rival} — ${currentFirm.name}` : `${staff.superior} — ${currentFirm.name}`, subject: t.subject, body: t.body, type: "internal" }, ...m]);
+    }
+  }
+
+  function advanceQuarter() {
+    const q = quarter + 1;
+    setQuarter(q);
+    let working = firms.map((f) => {
+      if (f.id === currentFirmId) {
+        const updated = { ...f };
+        if (f.public) updated.stockPrice = Math.max(1, +(f.stockPrice * (1 + randInt(-6, 6) / 100)).toFixed(2));
+        return updated;
+      }
+      const updated = { ...f, score: clamp(f.score + randInt(-4, 4), 8, 96), employees: f.employees + randInt(0, 2) };
+      if (f.public) updated.stockPrice = Math.max(1, +(f.stockPrice * (1 + randInt(-8, 8) / 100)).toFixed(2));
+      return updated;
+    });
+    const newsItems = [];
+    const rivals = working.filter((f) => f.id !== currentFirmId);
+    const sorted = [...rivals].sort((a, b) => a.score - b.score);
+    if (q % 2 === 0 && sorted.length >= 2) {
+      const target = sorted[0], acquirer = sorted[1];
+      const pickedName = NEW_FIRM_NAMES[randInt(0, NEW_FIRM_NAMES.length - 1)];
+      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-"), name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false };
+      const merged = { ...acquirer, score: clamp(Math.round((acquirer.score + target.score) / 2) + 5, 10, 96), employees: acquirer.employees + target.employees };
+      working = working.filter((f) => f.id !== target.id && f.id !== acquirer.id);
+      working.push(merged, newEntrant);
+      newsItems.push(`T${q} — Fusion : ${acquirer.name} absorbe ${target.name}. ${newEntrant.name} fait son entrée pour maintenir 20 fonds actifs.`);
+    } else {
+      const byDelta = rivals.slice().sort((a, b) => b.score - a.score);
+      if (byDelta.length) newsItems.push(`T${q} — ${byDelta[0].name} mène le marché ce trimestre avec un score de ${byDelta[0].score}.`);
+    }
+    setFirms(working);
+
+    // Priorité 1 : les participations continuent leur dérive habituelle, mais chaque position
+    // portant un risque caché planifié est vérifiée — le résultat s'impose au moment prévu,
+    // indépendamment de la qualité de l'analyse initiale.
+    let firmScoreDelta = 0;
+    setPortfolio((prev) => prev.map((pos) => {
+      let updated = { ...pos, value: Math.max(1, Math.round(pos.value * (1 + randInt(-15, 15) / 100))) };
+      if (pos.pendingRisk && !pos.resolvedRisk && q >= pos.pendingRisk.revealQuarter) {
+        const impactedValue = Math.max(1, Math.round(updated.value * (1 + pos.pendingRisk.impactFraction)));
+        newsItems.push(`T${q} — Risque caché révélé chez ${pos.name} : ${pos.pendingRisk.description}`);
+        firmScoreDelta += pos.pendingRisk.scoreImpact;
+        updated = { ...updated, value: impactedValue, resolvedRisk: { description: pos.pendingRisk.description } };
+      }
+      return updated;
+    }));
+    if (firmScoreDelta !== 0) {
+      setFirms((prev) => prev.map((f) => (f.id === currentFirmId ? { ...f, score: clamp(f.score + firmScoreDelta, 5, 98) } : f)));
+    }
+
+    setDryPowder((d) => +(d + Math.max(1, Math.round(currentFirm.score / 12))).toFixed(1));
+    const myScore = working.find((f) => f.id === currentFirmId).score;
+    if (myScore < 35 && !opaWarned) { newsItems.push(`T${q} — ⚠️ ${currentFirm.name} affiche des performances faibles : une OPA hostile devient possible.`); setOpaWarned(true); }
+    if (myScore >= 40) setOpaWarned(false);
+    setNews((n) => [...newsItems, ...n]);
+    addRandomMail();
+  }
+
+  function reshuffleCards() { setRevisionCards(FORMULAS.map((_, i) => i).sort(() => Math.random() - 0.5).slice(0, 3)); }
+
+  function confirmApplication(firmId) {
+    const firm = firms.find((f) => f.id === firmId);
+    const gap = firm.score - currentFirm.score;
+    const rejected = Math.random() < (gap > 25 ? 0.4 : 0.05);
+    if (rejected) {
+      setApplicationResult({ success: false, message: `Le comité de recrutement de ${firm.name} juge votre profil pas encore prêt pour un fonds de ce calibre. Réessayez plus tard.` });
+    } else {
+      setCurrentFirmId(firmId);
+      setYear((y) => y + 1);
+      setCareerHistory((h) => [...h, { firmName: firm.name, role: currentRank.name, year: year + 1 }]);
+      setNews((n) => [`T${quarter} — ${playerName} rejoint ${firm.name} au poste de ${currentRank.name}.`, ...n]);
+      const newStaff = getStaff(firmId, rankIndex, firms);
+      setApplicationResult({ success: true, message: `Vous êtes embauché(e) comme ${currentRank.name} chez ${firm.name}, sous la supervision de ${newStaff.superior} (${newStaff.superiorTitle}).` });
+    }
+    setViewingOfferId(null);
+  }
+
+  const marketSorted = [...firms].sort((a, b) => b.score - a.score);
+  const playerPosition = marketSorted.findIndex((f) => f.id === currentFirmId) + 1;
+  const grossTotal = careerHistory.reduce((sum, h) => { const r = RANKS.find((rk) => rk.name === h.role) || RANKS[0]; return sum + r.salary + r.bonus; }, 0);
+  const netTotal = Math.round(grossTotal * 0.62);
+
+  if (!loaded) {
+    return <div className="w-full min-h-screen flex items-center justify-center" style={{ backgroundColor: PALETTE.bg, color: PALETTE.textMuted }}>Chargement...</div>;
+  }
+
+  if (!playerName) {
+    return <NameGate onStart={setPlayerName} />;
+  }
+
+  function selectTab(id) {
+    setTab(id);
+    setSelectedScenarioId(null);
+    setApplicationResult(null);
+    setViewingOfferId(null);
+  }
+
+  return (
+    <div className="w-full min-h-screen flex flex-col" style={{ backgroundColor: PALETTE.bg, color: PALETTE.textPrimary, fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}>
+      <Header playerName={playerName} currentFirm={currentFirm} staff={staff} currentRank={currentRank} playerPosition={playerPosition} firmsCount={firms.length} quarter={quarter} advanceQuarter={advanceQuarter} />
+      <NavTabs tab={tab} onSelect={selectTab} />
+
+      <main className="flex-1 w-full max-w-5xl mx-auto px-6 py-8">
+        {tab === "apercu" && (
+          <OverviewTab
+            currentFirm={currentFirm} rankIndex={rankIndex} currentRank={currentRank} nextRank={nextRank}
+            progressPct={progressPct} xp={xp} dealsReviewed={dealsReviewed} completedCount={completedCount}
+            visibleScenarios={visibleScenarios} staff={staff} setTab={setTab} setXp={setXp} playerName={playerName}
+          />
+        )}
+
+        {tab === "cas" && (
+          <CasesTab
+            visibleScenarios={visibleScenarios} completedCount={completedCount} currentRank={currentRank}
+            scenarioChoices={scenarioChoices} selectedScenario={selectedScenario} chosenOptionId={chosenOptionId}
+            setSelectedScenarioId={setSelectedScenarioId} handleChoose={handleChoose} currentFirm={currentFirm}
+          />
+        )}
+
+        {tab === "acquisitions" && (
+          <AcquisitionsTab
+            isDirectorial={isDirectorial} staff={staff} acquisitionSlots={acquisitionSlots}
+            expandedCompanyId={expandedCompanyId} setExpandedCompanyId={setExpandedCompanyId}
+            proposalChoices={proposalChoices} chooseProposal={chooseProposal} passOn={passOn}
+            portfolio={portfolio} quarter={quarter}
+          />
+        )}
+
+        {tab === "banque" && <BankTab dryPowder={dryPowder} isDirectorial={isDirectorial} loanLog={loanLog} />}
+
+        {tab === "carriere" && <CareerTab playerName={playerName} year={year} careerHistory={careerHistory} grossTotal={grossTotal} netTotal={netTotal} />}
+
+        {tab === "marche" && (
+          <MarketTab marketSorted={marketSorted} currentFirm={currentFirm} currentFirmId={currentFirmId} rankIndex={rankIndex} goPublic={goPublic} launchTakeover={launchTakeover} />
+        )}
+
+        {tab === "emploi" && (
+          <JobsTab
+            currentFirmId={currentFirmId} firms={firms} rankIndex={rankIndex} currentRank={currentRank}
+            applicationResult={applicationResult} setApplicationResult={setApplicationResult}
+            viewingOfferId={viewingOfferId} setViewingOfferId={setViewingOfferId} confirmApplication={confirmApplication}
+          />
+        )}
+
+        {tab === "mails" && <MailTab mail={mail} setTab={setTab} />}
+
+        {tab === "actualites" && <NewsTab news={news} />}
+
+        {tab === "revision" && <RevisionTab revisionCards={revisionCards} reshuffleCards={reshuffleCards} />}
+      </main>
+
+      <GlossaryFooter open={glossaryOpen} setOpen={setGlossaryOpen} />
+    </div>
+  );
+}

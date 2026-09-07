@@ -1,0 +1,17 @@
+export const GLOSSARY = {
+  "LBO": "Leveraged Buyout — rachat d'une entreprise financé majoritairement par de la dette.",
+  "B2B": "Business to Business — entreprise dont les clients sont d'autres entreprises.",
+  "IRR": "Internal Rate of Return — mesure la rentabilité annualisée d'un investissement.",
+  "EBITDA": "Résultat opérationnel avant charges financières, impôts et amortissements.",
+  "EV": "Enterprise Value — valeur totale d'une société, dette comprise.",
+  "Covenant": "Clause contractuelle des prêteurs qui limite certaines actions de l'entreprise endettée.",
+  "Unitranche": "Financement combinant dette senior et subordonnée en une seule tranche.",
+  "Comité d'investissement": "Instance interne qui valide ou rejette une décision de deal.",
+  "Cession / Exit": "Sortie d'un investissement, par vente, IPO ou recapitalisation.",
+  "Multiple": "Ratio utilisé pour valoriser une entreprise, ex: EV/EBITDA.",
+  "DCF": "Discounted Cash Flow — valorisation par actualisation des flux de trésorerie futurs.",
+  "Bolt-on": "Acquisition complémentaire réalisée par une entreprise déjà détenue en portefeuille.",
+  "Deal flow propriétaire": "Opportunités identifiées en direct, non intermédiées par une banque d'affaires.",
+  "Levier": "Part de dette utilisée pour financer une acquisition, par rapport aux fonds propres investis.",
+  "Dry powder": "Capital déjà levé auprès des investisseurs (LPs) mais pas encore déployé dans des deals.",
+};
