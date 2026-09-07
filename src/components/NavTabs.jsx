@@ -2,17 +2,16 @@ import { PALETTE } from "../data/palette.js";
 
 const BASE_TABS = [
   { id: "apercu", label: "Aperçu" }, { id: "cas", label: "Cas pratique" }, { id: "acquisitions", label: "Acquisitions" },
-  { id: "banque", label: "Banque" },
+  { id: "banque", label: "Banque" }, { id: "founder", label: "Ma PE" },
 ];
 const DIRECTORIAL_TABS = [{ id: "finances", label: "Finances" }];
-const PARTNER_TABS = [{ id: "founder", label: "Ma PE" }];
 const REST_TABS = [
   { id: "carriere", label: "Ma carrière" }, { id: "marche", label: "Marché" },
   { id: "emploi", label: "Emploi" }, { id: "mails", label: "Mails" }, { id: "actualites", label: "Actualités" }, { id: "revision", label: "Révision" },
 ];
 
-export default function NavTabs({ tab, onSelect, isDirectorial, isPartner }) {
-  const tabs = [...BASE_TABS, ...(isDirectorial ? DIRECTORIAL_TABS : []), ...(isPartner ? PARTNER_TABS : []), ...REST_TABS];
+export default function NavTabs({ tab, onSelect, isDirectorial }) {
+  const tabs = [...BASE_TABS, ...(isDirectorial ? DIRECTORIAL_TABS : []), ...REST_TABS];
   return (
     <nav className="w-full px-6 flex gap-5 overflow-x-auto" style={{ borderBottom: `1px solid ${PALETTE.line}` }}>
       {tabs.map((t) => (

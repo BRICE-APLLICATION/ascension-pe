@@ -35,9 +35,12 @@ function computeRiskManagement(portfolio, dueDiligenceSkill) {
 // maintenant", pas "la partie est terminée".
 export function computeEndgamePath({ rankIndex, ceoFirmId, ownFirmId, careerHistory }) {
   if (ownFirmId) {
+    // La carrière démarre toujours sur une entrée initiale (le poste de départ chez Carl Capital) :
+    // fonder juste après celle-ci, sans jamais avoir changé de poste, est un vrai "jour 1" ; au
+    // moins un changement d'emploi avant la fondation fait de ce parcours un hybride.
     const founderEntryIndex = careerHistory.findIndex((h) => h.role === "Fondateur");
-    const precededByCarlOrOther = founderEntryIndex > 0;
-    return precededByCarlOrOther
+    const precededByOtherEmployment = founderEntryIndex > 1;
+    return precededByOtherEmployment
       ? { key: "hybride", label: "Hybride — carrière employée puis fondateur de sa propre firme" }
       : { key: "entrepreneur", label: "Entrepreneur — a bâti sa propre firme dès le départ" };
   }

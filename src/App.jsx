@@ -128,12 +128,13 @@ export default function App() {
   const currentRank = RANKS[rankIndex];
   const nextRank = RANKS[rankIndex + 1];
   const progressPct = nextRank ? clamp(Math.round(((xp - currentRank.threshold) / (nextRank.threshold - currentRank.threshold)) * 100), 0, 100) : 100;
-  const isDirectorial = rankIndex >= DIRECTORIAL_RANK;
+  // Diriger sa propre firme donne pleine autorité sur son capital quel que soit le rang XP — un
+  // fondateur n'a pas de supérieur à qui déférer la décision d'investir.
+  const isDirectorial = rankIndex >= DIRECTORIAL_RANK || (!!ownFirmId && currentFirmId === ownFirmId);
 
   const currentFirm = firms.find((f) => f.id === currentFirmId) || firms[0];
   const staff = getStaff(currentFirmId, rankIndex, firms);
   const isCeo = ceoFirmId === currentFirmId;
-  const isPartner = rankIndex === 4;
   const ownFirm = ownFirmId ? firms.find((f) => f.id === ownFirmId) : null;
   const careerProfile = computeCareerProfile({ skills, reputation, xp, dealsReviewed, portfolio, relationshipWithSuperior: relationships[staff.superior] });
   const endgamePath = computeEndgamePath({ rankIndex, ceoFirmId, ownFirmId, careerHistory });
@@ -588,11 +589,12 @@ export default function App() {
     }
   }
 
-  // Étape 3 — chemin Fondateur : quitter le parcours employé pour construire sa propre firme,
+  // Chemin Fondateur : quitter (ou compléter) le parcours employé pour construire sa propre firme,
   // financée d'abord sur capital personnel (voir FOUNDER_SEED_CAPITAL), puis par dette bancaire
-  // (le système multi-banques existant) et enfin par des levées de fonds auprès de LPs.
+  // (le système multi-banques existant) et enfin par des levées de fonds auprès de LPs. Disponible
+  // dès le début du jeu, avec des ressources très limitées au départ — pas réservé aux Partners.
   function foundOwnFirm() {
-    if (rankIndex !== 4 || ownFirmId) return;
+    if (ownFirmId) return;
     if (isCeo) setCeoFirmId(null);
     const id = `${playerName.toLowerCase().replace(/[^a-z]+/g, "-")}-capital`;
     const name = `${playerName} Capital`;
@@ -644,7 +646,7 @@ export default function App() {
   return (
     <div className="w-full min-h-screen flex flex-col" style={{ backgroundColor: PALETTE.bg, color: PALETTE.textPrimary, fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}>
       <Header playerName={playerName} currentFirm={currentFirm} staff={staff} currentRank={currentRank} isCeo={isCeo} isFounder={currentFirmId === ownFirmId} playerPosition={playerPosition} firmsCount={firms.length} quarter={quarter} advanceQuarter={advanceQuarter} />
-      <NavTabs tab={tab} onSelect={selectTab} isDirectorial={isDirectorial} isPartner={isPartner} />
+      <NavTabs tab={tab} onSelect={selectTab} isDirectorial={isDirectorial} />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-6 py-8">
         {tab === "apercu" && (
@@ -688,7 +690,7 @@ export default function App() {
           <FinancesTab currentFirm={currentFirm} dryPowder={dryPowder} portfolio={portfolio} quarter={quarter} />
         )}
 
-        {tab === "founder" && isPartner && (
+        {tab === "founder" && (
           <FounderTab
             playerName={playerName} ownFirmId={ownFirmId} ownFirm={ownFirm} currentFirmId={currentFirmId}
             dryPowder={dryPowder} portfolio={portfolio} quarter={quarter} foundOwnFirm={foundOwnFirm}
