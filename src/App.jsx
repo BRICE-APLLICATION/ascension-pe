@@ -68,19 +68,63 @@ export default function App() {
   const [opaWarned, setOpaWarned] = useState(false);
   const [mail, setMail] = useState(SEED_MAIL);
 
-  const [acquisitionSlots, setAcquisitionSlots] = useState([0, 1, 2]);
-  const [investedIds, setInvestedIds] = useState([]);
-  const [portfolio, setPortfolio] = useState([]);
+  // Ces données appartiennent à la firme, pas au joueur — au même titre que cash/lpCommitted/
+  // corporateDebt qui sont déjà des champs sur chaque firme. Elles sont indexées par firmId plutôt
+  // que d'être ajoutées comme champs sur `firms` pour limiter la portée de ce changement : tous les
+  // appels existants (setPortfolio(x => ...), etc.) continuent de fonctionner sans modification,
+  // seule la lecture/écriture sous-jacente devient scopée à la firme active.
+  const [acquisitionSlotsByFirm, setAcquisitionSlotsByFirm] = useState({ [FIRM_ID]: [0, 1, 2] });
+  const [investedIdsByFirm, setInvestedIdsByFirm] = useState({ [FIRM_ID]: [] });
+  const [portfolioByFirm, setPortfolioByFirm] = useState({ [FIRM_ID]: [] });
+  const [proposalChoicesByFirm, setProposalChoicesByFirm] = useState({ [FIRM_ID]: {} });
+  const [ddResultsByFirm, setDdResultsByFirm] = useState({ [FIRM_ID]: {} });
+  const [dryPowderByFirm, setDryPowderByFirm] = useState({ [FIRM_ID]: 40 });
+  const [loanLogByFirm, setLoanLogByFirm] = useState({ [FIRM_ID]: [] });
+
+  const acquisitionSlots = acquisitionSlotsByFirm[currentFirmId] ?? [0, 1, 2];
+  const investedIds = investedIdsByFirm[currentFirmId] ?? [];
+  const portfolio = portfolioByFirm[currentFirmId] ?? [];
+  const proposalChoices = proposalChoicesByFirm[currentFirmId] ?? {};
+  const ddResults = ddResultsByFirm[currentFirmId] ?? {};
+  const dryPowder = dryPowderByFirm[currentFirmId] ?? (firms.find((f) => f.id === currentFirmId)?.dryPowder ?? 20);
+  const loanLog = loanLogByFirm[currentFirmId] ?? [];
+
+  function setAcquisitionSlots(updater, firmId = currentFirmId) {
+    setAcquisitionSlotsByFirm((prev) => ({ ...prev, [firmId]: typeof updater === "function" ? updater(prev[firmId] ?? [0, 1, 2]) : updater }));
+  }
+  function setInvestedIds(updater, firmId = currentFirmId) {
+    setInvestedIdsByFirm((prev) => ({ ...prev, [firmId]: typeof updater === "function" ? updater(prev[firmId] ?? []) : updater }));
+  }
+  function setPortfolio(updater, firmId = currentFirmId) {
+    setPortfolioByFirm((prev) => ({ ...prev, [firmId]: typeof updater === "function" ? updater(prev[firmId] ?? []) : updater }));
+  }
+  function setProposalChoices(updater, firmId = currentFirmId) {
+    setProposalChoicesByFirm((prev) => ({ ...prev, [firmId]: typeof updater === "function" ? updater(prev[firmId] ?? {}) : updater }));
+  }
+  function setDdResults(updater, firmId = currentFirmId) {
+    setDdResultsByFirm((prev) => ({ ...prev, [firmId]: typeof updater === "function" ? updater(prev[firmId] ?? {}) : updater }));
+  }
+  function setDryPowder(updater, firmId = currentFirmId) {
+    setDryPowderByFirm((prev) => ({ ...prev, [firmId]: typeof updater === "function" ? updater(prev[firmId] ?? (firms.find((f) => f.id === firmId)?.dryPowder ?? 20)) : updater }));
+  }
+  function setLoanLog(updater, firmId = currentFirmId) {
+    setLoanLogByFirm((prev) => ({ ...prev, [firmId]: typeof updater === "function" ? updater(prev[firmId] ?? []) : updater }));
+  }
+
   const [expandedCompanyId, setExpandedCompanyId] = useState(null);
-  const [proposalChoices, setProposalChoices] = useState({});
   const [selectedProposal, setSelectedProposal] = useState({});
   const [bankRejections, setBankRejections] = useState({});
-  const [ddResults, setDdResults] = useState({});
   const [selectedThesis, setSelectedThesis] = useState({});
   const [relationships, setRelationships] = useState(defaultRelationships());
 
-  const [dryPowder, setDryPowder] = useState(40);
-  const [loanLog, setLoanLog] = useState([]);
+  // Ce sont des brouillons de décision en cours, pas des données persistantes : elles n'ont pas de
+  // sens une fois qu'on a changé de firme.
+  useEffect(() => {
+    setSelectedProposal({});
+    setBankRejections({});
+    setSelectedThesis({});
+    setExpandedCompanyId(null);
+  }, [currentFirmId]);
 
   const [viewingOfferId, setViewingOfferId] = useState(null);
   const [applicationResult, setApplicationResult] = useState(null);
@@ -100,14 +144,25 @@ export default function App() {
       if (s.news) setNews(s.news);
       if (s.opaWarned !== undefined) setOpaWarned(s.opaWarned);
       if (s.mail) setMail(s.mail);
-      if (s.acquisitionSlots) setAcquisitionSlots(s.acquisitionSlots);
-      if (s.investedIds) setInvestedIds(s.investedIds);
-      if (s.portfolio) setPortfolio(s.portfolio);
-      if (s.dryPowder !== undefined) setDryPowder(s.dryPowder);
-      if (s.loanLog) setLoanLog(s.loanLog);
+      // Ces champs sont désormais scopés par firme. Une sauvegarde déjà au nouveau format porte un
+      // suffixe ByFirm ; une sauvegarde de l'ancien format porte les valeurs à plat pour la seule
+      // firme active à l'époque — on les range sous cette firme plutôt que de les perdre.
+      const legacyFirmId = s.currentFirmId || FIRM_ID;
+      if (s.acquisitionSlotsByFirm) setAcquisitionSlotsByFirm(s.acquisitionSlotsByFirm);
+      else if (s.acquisitionSlots) setAcquisitionSlotsByFirm({ [legacyFirmId]: s.acquisitionSlots });
+      if (s.investedIdsByFirm) setInvestedIdsByFirm(s.investedIdsByFirm);
+      else if (s.investedIds) setInvestedIdsByFirm({ [legacyFirmId]: s.investedIds });
+      if (s.portfolioByFirm) setPortfolioByFirm(s.portfolioByFirm);
+      else if (s.portfolio) setPortfolioByFirm({ [legacyFirmId]: s.portfolio });
+      if (s.dryPowderByFirm) setDryPowderByFirm(s.dryPowderByFirm);
+      else if (s.dryPowder !== undefined) setDryPowderByFirm({ [legacyFirmId]: s.dryPowder });
+      if (s.loanLogByFirm) setLoanLogByFirm(s.loanLogByFirm);
+      else if (s.loanLog) setLoanLogByFirm({ [legacyFirmId]: s.loanLog });
+      if (s.proposalChoicesByFirm) setProposalChoicesByFirm(s.proposalChoicesByFirm);
+      else if (s.proposalChoices) setProposalChoicesByFirm({ [legacyFirmId]: s.proposalChoices });
+      if (s.ddResultsByFirm) setDdResultsByFirm(s.ddResultsByFirm);
+      else if (s.ddResults) setDdResultsByFirm({ [legacyFirmId]: s.ddResults });
       if (s.scenarioChoices) setScenarioChoices(s.scenarioChoices);
-      if (s.proposalChoices) setProposalChoices(s.proposalChoices);
-      if (s.ddResults) setDdResults(s.ddResults);
       if (s.relationships) setRelationships(s.relationships);
       if (s.skills) setSkills(s.skills);
       if (s.reputation) setReputation(s.reputation);
@@ -121,8 +176,8 @@ export default function App() {
 
   useEffect(() => {
     if (!loaded || !playerName) return;
-    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResults, relationships });
-  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResults, relationships]);
+    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResultsByFirm, relationships });
+  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResultsByFirm, relationships]);
 
   const rankIndex = getRankIndex(xp);
   const currentRank = RANKS[rankIndex];
@@ -326,7 +381,7 @@ export default function App() {
     const success = Math.random() < chance;
     if (success) {
       const pickedName = NEW_FIRM_NAMES[randInt(0, NEW_FIRM_NAMES.length - 1)];
-      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-") + "-" + quarter, name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false, corporateDebt: 0, debtWeightedRate: 0, lpCommitted: randInt(80, 150), cash: randInt(5, 15) };
+      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-") + "-" + Date.now(), name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false, corporateDebt: 0, debtWeightedRate: 0, lpCommitted: randInt(80, 150), cash: randInt(5, 15), dryPowder: randInt(10, 25) };
       setFirms((prev) => prev.filter((f) => f.id !== targetId).map((f) => (f.id === currentFirmId ? { ...f, score: clamp(f.score + Math.round(target.score / 4), 5, 98), employees: f.employees + target.employees } : f)).concat(newEntrant));
       setDryPowder((d) => +(d - cost).toFixed(1));
       setXp((v) => v + 40);
@@ -417,7 +472,11 @@ export default function App() {
     if (q % 2 === 0 && sorted.length >= 2) {
       const target = sorted[0], acquirer = sorted[1];
       const pickedName = NEW_FIRM_NAMES[randInt(0, NEW_FIRM_NAMES.length - 1)];
-      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-"), name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false, corporateDebt: 0, debtWeightedRate: 0, lpCommitted: randInt(80, 150), cash: randInt(5, 15) };
+      // L'id doit être unique à travers tout l'historique de la partie, pas seulement à cet
+      // instant — sans le suffixe de trimestre, deux fusions à des moments différents peuvent
+      // repiocher le même nom (le pool n'en compte que 5) et produire deux firmes avec le même id,
+      // ce qui casse silencieusement l'invariant "toujours 20 fonds actifs".
+      const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-") + "-" + Date.now(), name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false, corporateDebt: 0, debtWeightedRate: 0, lpCommitted: randInt(80, 150), cash: randInt(5, 15), dryPowder: randInt(10, 25) };
       const merged = { ...acquirer, score: clamp(Math.round((acquirer.score + target.score) / 2) + 5, 10, 96), employees: acquirer.employees + target.employees };
       working = working.filter((f) => f.id !== target.id && f.id !== acquirer.id);
       working.push(merged, newEntrant);
@@ -602,7 +661,7 @@ export default function App() {
     setFirms((prev) => [...prev, newFirm]);
     setCurrentFirmId(id);
     setOwnFirmId(id);
-    setDryPowder(FOUNDER_SEED_CAPITAL);
+    setDryPowder(FOUNDER_SEED_CAPITAL, id);
     setYear((y) => y + 1);
     setCareerHistory((h) => [...h, { firmName: name, role: "Fondateur", year: year + 1 }]);
     setNews((n) => [`T${quarter} — ${playerName} quitte pour fonder ${name}, financée sur capital personnel (${FOUNDER_SEED_CAPITAL} M$).`, ...n]);

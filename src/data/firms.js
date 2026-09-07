@@ -76,6 +76,10 @@ export const FIRMS_INITIAL = FIRMS_BASE.map((f) => ({
   debtWeightedRate: 0,
   lpCommitted: Math.round(100 + f.score * 3),
   cash: Math.round(5 + f.score / 10),
+  // Capital disponible pour investir de but en blanc si le joueur rejoint cette firme — distinct
+  // du cash opérationnel : conservé à 40 pour Carl Capital pour ne pas changer l'équilibrage
+  // d'origine, dérivé du score pour les 19 autres.
+  dryPowder: f.id === "carl-capital" ? 40 : Math.round(15 + f.score * 0.35),
 }));
 
 export const NEW_FIRM_NAMES = ["Amberlynn Capital", "Thistlewood Partners", "Corvid Capital Partners", "Havenrock Equity", "Pemberton & Vale"];
