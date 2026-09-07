@@ -8,3 +8,11 @@ export const RANKS = [
 
 // Rang à partir duquel le joueur passe de "proposer" à "investir réellement" (VP+).
 export const DIRECTORIAL_RANK = 2;
+
+// Les offres varient selon le calibre de la firme plutôt que d'appliquer partout la même grille :
+// un fonds mieux coté (score plus élevé) paie une prime, un fonds plus modeste paie en dessous
+// de la grille de référence. Centré sur le score de Carl Capital (68) pour ne pas déplacer
+// l'équilibrage d'origine.
+export function firmCompMultiplier(firmScore) {
+  return 0.8 + (firmScore / 100) * 0.5;
+}

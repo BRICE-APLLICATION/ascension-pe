@@ -13,5 +13,5 @@ export function getCompForRole(roleName) {
 export function getGrossForEntry(h) {
   if (h.negotiatedSalary !== undefined) return h.negotiatedSalary + h.negotiatedBonusCash + (h.equityValue || 0);
   const r = getCompForRole(h.role);
-  return r.salary + r.bonus;
+  return Math.round((r.salary + r.bonus) * (h.salaryMultiplier ?? 1));
 }

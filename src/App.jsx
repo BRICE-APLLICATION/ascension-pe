@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { PALETTE } from "./data/palette.js";
-import { RANKS, DIRECTORIAL_RANK } from "./data/ranks.js";
+import { RANKS, DIRECTORIAL_RANK, firmCompMultiplier } from "./data/ranks.js";
 import { FIRM_ID, FIRMS_INITIAL, CEO_NAMES, NEW_FIRM_NAMES, getStaff } from "./data/firms.js";
 import { SCENARIOS } from "./data/scenarios.js";
 import { ACQUISITION_POOL } from "./data/acquisitions.js";
@@ -518,8 +518,25 @@ export default function App() {
       working.push(merged, newEntrant);
       newsItems.push(`T${q} — Fusion : ${acquirer.name} absorbe ${target.name}. ${newEntrant.name} fait son entrée pour maintenir 20 fonds actifs.`);
     } else {
-      const byDelta = rivals.slice().sort((a, b) => b.score - a.score);
-      if (byDelta.length) newsItems.push(`T${q} — ${byDelta[0].name} mène le marché ce trimestre avec un score de ${byDelta[0].score}.`);
+      // Dynamisme du marché : une OPA rivale n'est plus cantonnée à la fusion programmée tous les
+      // 2 trimestres. Un fonds dominant peut tenter un rachat opportuniste sur un rival nettement
+      // plus faible n'importe quel trimestre — jamais garanti, la probabilité suit l'écart de score.
+      const byScore = rivals.slice().sort((a, b) => b.score - a.score);
+      const strongest = byScore[0];
+      const weakest = byScore[byScore.length - 1];
+      const gap = strongest && weakest ? strongest.score - weakest.score : 0;
+      const opaChance = clamp((gap - 20) / 100, 0, 0.4);
+      if (strongest && weakest && strongest.id !== weakest.id && Math.random() < opaChance) {
+        const pickedName = NEW_FIRM_NAMES[randInt(0, NEW_FIRM_NAMES.length - 1)];
+        const newEntrant = { id: pickedName.toLowerCase().replace(/[^a-z]+/g, "-") + "-" + Date.now(), name: pickedName, score: randInt(25, 40), employees: randInt(5, 15), public: false, corporateDebt: 0, debtWeightedRate: 0, lpCommitted: randInt(80, 150), cash: randInt(5, 15), dryPowder: randInt(10, 25) };
+        const merged = { ...strongest, score: clamp(Math.round((strongest.score + weakest.score) / 2) + 5, 10, 96), employees: strongest.employees + weakest.employees };
+        working = working.filter((f) => f.id !== weakest.id && f.id !== strongest.id);
+        working.push(merged, newEntrant);
+        newsItems.push(`T${q} — OPA opportuniste : ${strongest.name} rachète ${weakest.name}, distancé de ${gap} points de score. ${newEntrant.name} fait son entrée pour maintenir 20 fonds actifs.`);
+      } else {
+        const byDelta = rivals.slice().sort((a, b) => b.score - a.score);
+        if (byDelta.length) newsItems.push(`T${q} — ${byDelta[0].name} mène le marché ce trimestre avec un score de ${byDelta[0].score}.`);
+      }
     }
     setFirms(working);
 
@@ -658,7 +675,8 @@ export default function App() {
     if (isDirectorial) {
       const playerLeverage = computePlayerLeverage({ progressPct, dealsReviewed, currentFirmScore: currentFirm.score, careerScore: careerProfile.careerScore });
       const firmFlexibility = computeFirmFlexibility({ targetFirm: firm });
-      setNegotiation({ firmId, round: 1, playerLeverage, firmFlexibility, baseSalary: currentRank.salary, baseBonus: currentRank.bonus, phase: "posture", band: null, grantedBumpPct: 0, responseText: "" });
+      const mult = firmCompMultiplier(firm.score);
+      setNegotiation({ firmId, round: 1, playerLeverage, firmFlexibility, baseSalary: Math.round(currentRank.salary * mult), baseBonus: Math.round(currentRank.bonus * mult), phase: "posture", band: null, grantedBumpPct: 0, responseText: "" });
       setViewingOfferId(null);
       return;
     }
@@ -667,7 +685,7 @@ export default function App() {
     if (isCeo) setCeoFirmId(null);
     setCurrentFirmId(firmId);
     setYear((y) => y + 1);
-    setCareerHistory((h) => [...h, { firmName: firm.name, role: currentRank.name, year: year + 1 }]);
+    setCareerHistory((h) => [...h, { firmName: firm.name, role: currentRank.name, year: year + 1, salaryMultiplier: firmCompMultiplier(firm.score) }]);
     setNews((n) => [`T${quarter} — ${playerName} rejoint ${firm.name} au poste de ${currentRank.name}.`, ...n]);
     const newStaff = getStaff(firmId, rankIndex, firms);
     setApplicationResult({ success: true, message: `Vous êtes embauché(e) comme ${currentRank.name} chez ${firm.name}, sous la supervision de ${newStaff.superior} (${newStaff.superiorTitle}).` });

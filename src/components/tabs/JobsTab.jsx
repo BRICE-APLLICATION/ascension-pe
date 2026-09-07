@@ -1,5 +1,6 @@
 import { PALETTE } from "../../data/palette.js";
 import { JOB_MARKET_FIRM_IDS, CEO_NAMES, getStaff } from "../../data/firms.js";
+import { firmCompMultiplier } from "../../data/ranks.js";
 import { fmtMoney } from "../../lib/utils.js";
 
 export default function JobsTab({
@@ -30,7 +31,7 @@ export default function JobsTab({
               <div className="mt-3 p-3 rounded text-xs" style={{ backgroundColor: PALETTE.panelAlt }}>
                 <p style={{ fontWeight: 600, color: PALETTE.textPrimary }}>{currentRank.name} — {currentRank.domain}</p>
                 <p className="mt-1" style={{ color: PALETTE.textMuted }}>{firm.name} recherche un(e) {currentRank.name} pour renforcer son équipe « {currentRank.domain} », sous la supervision de {s.superior} ({s.superiorTitle}).</p>
-                <p className="mt-1" style={{ color: PALETTE.textMuted, fontFamily: "'IBM Plex Mono', monospace" }}>~{fmtMoney((currentRank.salary + currentRank.bonus) * 1.05)} $ CAD/an</p>
+                <p className="mt-1" style={{ color: PALETTE.textMuted, fontFamily: "'IBM Plex Mono', monospace" }}>~{fmtMoney((currentRank.salary + currentRank.bonus) * firmCompMultiplier(firm.score) * 1.05)} $ CAD/an</p>
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => confirmApplication(id)} className="px-3 py-1.5 rounded" style={{ backgroundColor: PALETTE.gold, color: PALETTE.bg }}>Confirmer ma candidature</button>
                   <button onClick={() => setViewingOfferId(null)} className="px-3 py-1.5 rounded" style={{ backgroundColor: PALETTE.panel, color: PALETTE.textMuted }}>Annuler</button>
