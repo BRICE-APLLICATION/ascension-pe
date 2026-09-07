@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { PALETTE } from "../../data/palette.js";
 import { FOUNDER_SEED_CAPITAL, fundLabel } from "../../data/founder.js";
 
@@ -14,7 +15,10 @@ export default function FounderTab({
   playerName, ownFirmId, ownFirm, currentFirmId, dryPowder, portfolio, quarter,
   foundOwnFirm, attemptFundraise, fundraiseResult, lastFundraiseQuarter,
 }) {
+  const [firmNameInput, setFirmNameInput] = useState("");
+
   if (!ownFirmId) {
+    const defaultName = `${playerName} Capital`;
     return (
       <div className="max-w-2xl">
         <div className="p-5 rounded" style={{ backgroundColor: PALETTE.panel }}>
@@ -24,7 +28,8 @@ export default function FounderTab({
             ({FOUNDER_SEED_CAPITAL} M$), puis par dette bancaire, et enfin par des levées de fonds auprès de LPs à mesure
             que votre réputation grandit.
           </p>
-          <button onClick={foundOwnFirm} className="px-4 py-2 rounded text-sm" style={{ backgroundColor: PALETTE.gold, color: PALETTE.bg }}>Fonder {playerName} Capital</button>
+          <input value={firmNameInput} onChange={(e) => setFirmNameInput(e.target.value)} placeholder={defaultName} className="w-full px-3 py-2 rounded text-sm mb-3" style={{ backgroundColor: PALETTE.panelAlt, border: `1px solid ${PALETTE.line}`, color: PALETTE.textPrimary }} />
+          <button onClick={() => foundOwnFirm(firmNameInput.trim() || defaultName)} className="px-4 py-2 rounded text-sm" style={{ backgroundColor: PALETTE.gold, color: PALETTE.bg }}>Fonder {firmNameInput.trim() || defaultName}</button>
         </div>
       </div>
     );

@@ -701,11 +701,11 @@ export default function App() {
   // financée d'abord sur capital personnel (voir FOUNDER_SEED_CAPITAL), puis par dette bancaire
   // (le système multi-banques existant) et enfin par des levées de fonds auprès de LPs. Disponible
   // dès le début du jeu, avec des ressources très limitées au départ — pas réservé aux Partners.
-  function foundOwnFirm() {
+  function foundOwnFirm(customName) {
     if (ownFirmId) return;
     if (isCeo) setCeoFirmId(null);
-    const id = `${playerName.toLowerCase().replace(/[^a-z]+/g, "-")}-capital`;
-    const name = `${playerName} Capital`;
+    const name = (customName || "").trim() || `${playerName} Capital`;
+    const id = `${name.toLowerCase().replace(/[^a-z]+/g, "-")}-${Date.now()}`;
     const newFirm = { id, name, score: 40, employees: 3, public: false, corporateDebt: 0, debtWeightedRate: 0, lpCommitted: 0, cash: 1, fundsRaised: 0 };
     setFirms((prev) => [...prev, newFirm]);
     setCurrentFirmId(id);
@@ -714,6 +714,23 @@ export default function App() {
     setYear((y) => y + 1);
     setCareerHistory((h) => [...h, { firmName: name, role: "Fondateur", year: year + 1 }]);
     setNews((n) => [`T${quarter} — ${playerName} quitte pour fonder ${name}, financée sur capital personnel (${FOUNDER_SEED_CAPITAL} M$).`, ...n]);
+  }
+
+  // Point d'entrée du jeu : soit le parcours employé par défaut chez Carl Capital, soit fonder sa
+  // propre PE dès le premier jour (aucune expérience préalable listée, année 1 — pas un détour par
+  // Carl Capital suivi d'une fondation immédiate).
+  function handleGameStart({ playerName: name, mode, firmName }) {
+    setPlayerName(name);
+    if (mode !== "founder") return;
+    const finalName = (firmName || "").trim() || `${name} Capital`;
+    const id = `${finalName.toLowerCase().replace(/[^a-z]+/g, "-")}-${Date.now()}`;
+    const newFirm = { id, name: finalName, score: 40, employees: 3, public: false, corporateDebt: 0, debtWeightedRate: 0, lpCommitted: 0, cash: 1, fundsRaised: 0 };
+    setFirms((prev) => [...prev, newFirm]);
+    setCurrentFirmId(id);
+    setOwnFirmId(id);
+    setDryPowder(FOUNDER_SEED_CAPITAL, id);
+    setCareerHistory([{ firmName: finalName, role: "Fondateur", year: 1 }]);
+    setNews([`T0 — ${name} fonde ${finalName} dès le premier jour, financée sur capital personnel (${FOUNDER_SEED_CAPITAL} M$).`]);
   }
 
   function attemptFundraise() {
@@ -740,7 +757,7 @@ export default function App() {
   }
 
   if (!playerName) {
-    return <NameGate onStart={setPlayerName} />;
+    return <NameGate onStart={handleGameStart} />;
   }
 
   function selectTab(id) {
