@@ -15,6 +15,7 @@ import { POSTURES, computePlayerLeverage, computeFirmFlexibility, computeNegotia
 import { DD_BUDGET, investigateCategory } from "./data/duediligence.js";
 import { outcomeFromRisk } from "./data/thesis.js";
 import { defaultRelationships } from "./data/relationships.js";
+import { generateCandidatePool, acquisitionSlotBonus } from "./data/candidates.js";
 import { getRankIndex, clamp, randInt } from "./lib/utils.js";
 import { loadSave, persistSave } from "./lib/storage.js";
 import { computeCareerProfile, computeEndgamePath } from "./lib/career.js";
@@ -37,6 +38,7 @@ import NegotiationPanel from "./components/NegotiationPanel.jsx";
 import MailTab from "./components/tabs/MailTab.jsx";
 import NewsTab from "./components/tabs/NewsTab.jsx";
 import RevisionTab from "./components/tabs/RevisionTab.jsx";
+import RecruitmentTab from "./components/tabs/RecruitmentTab.jsx";
 
 export default function App() {
   const [loaded, setLoaded] = useState(false);
@@ -81,6 +83,11 @@ export default function App() {
   const [ddResultsByFirm, setDdResultsByFirm] = useState({ [FIRM_ID]: {} });
   const [dryPowderByFirm, setDryPowderByFirm] = useState({ [FIRM_ID]: 40 });
   const [loanLogByFirm, setLoanLogByFirm] = useState({ [FIRM_ID]: [] });
+  // Recrutement dans sa propre firme : compteur de recrutements réussis (pour le bonus de postes
+  // d'acquisition) et liste des candidats déjà recrutés (le pool se régénère chaque trimestre,
+  // mais un même identifiant de candidat ne doit jamais pouvoir être recruté deux fois).
+  const [recruitsByFirm, setRecruitsByFirm] = useState({});
+  const [hiredCandidateIdsByFirm, setHiredCandidateIdsByFirm] = useState({});
 
   const acquisitionSlots = acquisitionSlotsByFirm[currentFirmId] ?? [0, 1, 2];
   const investedIds = investedIdsByFirm[currentFirmId] ?? [];
@@ -172,14 +179,16 @@ export default function App() {
       if (s.ownFirmId !== undefined) setOwnFirmId(s.ownFirmId);
       if (s.lastFundraiseQuarter !== undefined) setLastFundraiseQuarter(s.lastFundraiseQuarter);
       if (s.lastQuarterAt !== undefined) setLastQuarterAt(s.lastQuarterAt);
+      if (s.recruitsByFirm) setRecruitsByFirm(s.recruitsByFirm);
+      if (s.hiredCandidateIdsByFirm) setHiredCandidateIdsByFirm(s.hiredCandidateIdsByFirm);
     }
     setLoaded(true);
   }, []);
 
   useEffect(() => {
     if (!loaded || !playerName) return;
-    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResultsByFirm, relationships, lastQuarterAt });
-  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResultsByFirm, relationships, lastQuarterAt]);
+    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm });
+  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm]);
 
   const rankIndex = getRankIndex(xp);
   const currentRank = RANKS[rankIndex];
@@ -238,6 +247,31 @@ export default function App() {
     setSelectedThesis((t) => { const n = { ...t }; delete n[usedCompanyId]; return n; });
   }
   function passOn(poolIdx) { cycleSlot(poolIdx); }
+
+  const recruitsCount = recruitsByFirm[ownFirmId] ?? 0;
+  const hiredCandidateIds = hiredCandidateIdsByFirm[ownFirmId] ?? [];
+  const candidatePool = ownFirmId ? generateCandidatePool(quarter, ownFirmId) : [];
+
+  function hireCandidate(candidate, outcome) {
+    if (!ownFirmId || currentFirmId !== ownFirmId || hiredCandidateIds.includes(candidate.id)) return;
+    if (!outcome.accepted || outcome.offer > dryPowder) return;
+    setDryPowder((v) => +(v - outcome.offer).toFixed(2), ownFirmId);
+    setFirms((prev) => prev.map((f) => (f.id === ownFirmId ? { ...f, employees: f.employees + 1 } : f)));
+    setHiredCandidateIdsByFirm((prev) => ({ ...prev, [ownFirmId]: [...(prev[ownFirmId] ?? []), candidate.id] }));
+    const nextCount = recruitsCount + 1;
+    setRecruitsByFirm((prev) => ({ ...prev, [ownFirmId]: nextCount }));
+
+    const desiredExtra = acquisitionSlotBonus(nextCount, ACQUISITION_POOL.length);
+    setAcquisitionSlots((slots) => {
+      const missing = 3 + desiredExtra - slots.length;
+      if (missing <= 0) return slots;
+      const used = new Set([...(investedIdsByFirm[ownFirmId] ?? []), ...slots.map((i) => ACQUISITION_POOL[i].id)]);
+      const available = ACQUISITION_POOL.map((_, i) => i).filter((i) => !used.has(ACQUISITION_POOL[i].id) && !slots.includes(i));
+      return [...slots, ...available.slice(0, missing)];
+    }, ownFirmId);
+
+    setNews((n) => [`T${quarter} — ${candidate.name} rejoint ${ownFirm.name} (${outcome.offer} M$).`, ...n]);
+  }
 
   function chooseThesis(poolIdx, thesisKey) {
     const company = ACQUISITION_POOL[poolIdx];
@@ -771,7 +805,7 @@ export default function App() {
   return (
     <div className="w-full min-h-screen flex flex-col" style={{ backgroundColor: PALETTE.bg, color: PALETTE.textPrimary, fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}>
       <Header playerName={playerName} currentFirm={currentFirm} staff={staff} currentRank={currentRank} isCeo={isCeo} isFounder={currentFirmId === ownFirmId} playerPosition={playerPosition} firmsCount={firms.length} quarter={quarter} advanceQuarter={advanceQuarterManually} />
-      <NavTabs tab={tab} onSelect={selectTab} isDirectorial={isDirectorial} />
+      <NavTabs tab={tab} onSelect={selectTab} isDirectorial={isDirectorial} showRecruitment={!!ownFirmId && currentFirmId === ownFirmId && isDirectorial} />
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-6 py-8">
         {tab === "apercu" && (
@@ -813,6 +847,13 @@ export default function App() {
 
         {tab === "finances" && isDirectorial && (
           <FinancesTab currentFirm={currentFirm} dryPowder={dryPowder} portfolio={portfolio} quarter={quarter} />
+        )}
+
+        {tab === "recrutement" && ownFirmId && currentFirmId === ownFirmId && (
+          <RecruitmentTab
+            ownFirm={ownFirm} dryPowder={dryPowder} candidatePool={candidatePool}
+            recruitsCount={recruitsCount} hiredIds={hiredCandidateIds} hireCandidate={hireCandidate}
+          />
         )}
 
         {tab === "founder" && (

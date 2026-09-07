@@ -5,13 +5,14 @@ const BASE_TABS = [
   { id: "banque", label: "Banque" }, { id: "founder", label: "Ma PE" },
 ];
 const DIRECTORIAL_TABS = [{ id: "finances", label: "Finances" }];
+const OWN_FIRM_TABS = [{ id: "recrutement", label: "Recrutement" }];
 const REST_TABS = [
   { id: "carriere", label: "Ma carrière" }, { id: "marche", label: "Marché" },
   { id: "emploi", label: "Emploi" }, { id: "mails", label: "Mails" }, { id: "actualites", label: "Actualités" }, { id: "revision", label: "Révision" },
 ];
 
-export default function NavTabs({ tab, onSelect, isDirectorial }) {
-  const tabs = [...BASE_TABS, ...(isDirectorial ? DIRECTORIAL_TABS : []), ...REST_TABS];
+export default function NavTabs({ tab, onSelect, isDirectorial, showRecruitment }) {
+  const tabs = [...BASE_TABS, ...(isDirectorial ? DIRECTORIAL_TABS : []), ...(showRecruitment ? OWN_FIRM_TABS : []), ...REST_TABS];
   return (
     <nav className="w-full px-6 flex gap-5 overflow-x-auto" style={{ borderBottom: `1px solid ${PALETTE.line}` }}>
       {tabs.map((t) => (
