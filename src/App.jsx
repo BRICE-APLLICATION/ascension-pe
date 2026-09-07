@@ -7,6 +7,8 @@ import { ACQUISITION_POOL } from "./data/acquisitions.js";
 import { BANKS } from "./data/banks.js";
 import { FORMULAS } from "./data/formulas.js";
 import { SEED_MAIL } from "./data/mail.js";
+import { defaultSkills } from "./data/skills.js";
+import { defaultReputation } from "./data/reputation.js";
 import { getRankIndex, clamp, randInt } from "./lib/utils.js";
 import { loadSave, persistSave } from "./lib/storage.js";
 
@@ -37,6 +39,8 @@ export default function App() {
   const [scenarioChoices, setScenarioChoices] = useState({});
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [revisionCards, setRevisionCards] = useState([0, 1, 2]);
+  const [skills, setSkills] = useState(defaultSkills());
+  const [reputation, setReputation] = useState(defaultReputation());
 
   const [firms, setFirms] = useState(FIRMS_INITIAL);
   const [currentFirmId, setCurrentFirmId] = useState(FIRM_ID);
@@ -84,14 +88,16 @@ export default function App() {
       if (s.loanLog) setLoanLog(s.loanLog);
       if (s.scenarioChoices) setScenarioChoices(s.scenarioChoices);
       if (s.proposalChoices) setProposalChoices(s.proposalChoices);
+      if (s.skills) setSkills(s.skills);
+      if (s.reputation) setReputation(s.reputation);
     }
     setLoaded(true);
   }, []);
 
   useEffect(() => {
     if (!loaded || !playerName) return;
-    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices });
-  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices]);
+    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation });
+  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlots, investedIds, portfolio, dryPowder, loanLog, scenarioChoices, proposalChoices, skills, reputation]);
 
   const rankIndex = getRankIndex(xp);
   const currentRank = RANKS[rankIndex];
@@ -114,6 +120,14 @@ export default function App() {
       setXp((v) => v + option.xp);
       setDealsReviewed((v) => v + 1);
       setFirms((prev) => prev.map((f) => (f.id === currentFirmId ? { ...f, score: clamp(f.score + option.impact, 5, 98) } : f)));
+      if (scenario.skill) {
+        const gain = option.correct ? 4 : 1;
+        setSkills((s) => ({ ...s, [scenario.skill]: clamp(s[scenario.skill] + gain, 0, 100) }));
+      }
+      if (scenario.reputationAudience) {
+        const delta = Math.round(option.impact / 2);
+        setReputation((r) => ({ ...r, [scenario.reputationAudience]: clamp(r[scenario.reputationAudience] + delta, 0, 100) }));
+      }
     }
   }
 
@@ -169,7 +183,11 @@ export default function App() {
     const bank = BANKS.find((b) => b.id === bankId);
     if (!option || !bank) return;
 
-    if (option.leverage > bank.maxLeverage) {
+    // La réputation Banques desserre ou resserre légèrement le plafond de levier officiel de
+    // chaque prêteur : un track record solide ouvre un peu plus de marge, un mauvais track
+    // record en ferme un peu.
+    const effectiveMaxLeverage = clamp(bank.maxLeverage + (reputation.banks - 50) / 500, 0.1, 0.98);
+    if (option.leverage > effectiveMaxLeverage) {
       setBankRejections((r) => ({ ...r, [company.id]: [...(r[company.id] || []), bankId] }));
       return;
     }
@@ -192,6 +210,11 @@ export default function App() {
     setInvestedIds((ids) => [...ids, company.id]);
     setDealsReviewed((v) => v + 1);
     setLoanLog((l) => [{ id: `loan-${Date.now()}`, quarter, bankId: bank.id, bankName: bank.name, rate: bank.rate, amount: debt, purpose: company.name, rejected: false }, ...l]);
+    setReputation((r) => ({
+      ...r,
+      banks: clamp(r.banks + (option.correct ? 2 : 1), 0, 100),
+      entrepreneurs: clamp(r.entrepreneurs + (option.correct ? 2 : -1), 0, 100),
+    }));
   }
 
   function launchTakeover(targetId) {
@@ -207,9 +230,11 @@ export default function App() {
       setDryPowder((d) => +(d - cost).toFixed(1));
       setXp((v) => v + 40);
       setNews((n) => [`T${quarter} — OPA réussie : ${currentFirm.name} absorbe ${target.name}. ${newEntrant.name} fait son entrée sur le marché pour maintenir ${firms.length} fonds actifs.`, ...n]);
+      setReputation((r) => ({ ...r, rivals: clamp(r.rivals - 3, 0, 100) }));
     } else {
       setDryPowder((d) => +(d - cost / 2).toFixed(1));
       setNews((n) => [`T${quarter} — OPA rejetée : le conseil d'administration de ${target.name} repousse l'offre de ${currentFirm.name}.`, ...n]);
+      setReputation((r) => ({ ...r, rivals: clamp(r.rivals - 1, 0, 100) }));
     }
   }
 
@@ -343,7 +368,7 @@ export default function App() {
           <OverviewTab
             currentFirm={currentFirm} rankIndex={rankIndex} currentRank={currentRank} nextRank={nextRank}
             progressPct={progressPct} xp={xp} dealsReviewed={dealsReviewed} completedCount={completedCount}
-            visibleScenarios={visibleScenarios} staff={staff} setTab={setTab} setXp={setXp} playerName={playerName}
+            visibleScenarios={visibleScenarios} staff={staff} setTab={setTab} setXp={setXp} playerName={playerName} reputation={reputation}
           />
         )}
 

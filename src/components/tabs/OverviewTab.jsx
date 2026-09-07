@@ -1,11 +1,12 @@
 import { Briefcase, Target, BarChart3, ChevronRight, Users } from "lucide-react";
 import { PALETTE } from "../../data/palette.js";
 import { RANKS } from "../../data/ranks.js";
+import { AUDIENCES } from "../../data/reputation.js";
 import { clamp } from "../../lib/utils.js";
 
 export default function OverviewTab({
   currentFirm, rankIndex, currentRank, nextRank, progressPct, xp, dealsReviewed,
-  completedCount, visibleScenarios, staff, setTab, setXp, playerName,
+  completedCount, visibleScenarios, staff, setTab, setXp, playerName, reputation,
 }) {
   return (
     <div className="flex flex-col md:flex-row gap-8">
@@ -66,6 +67,18 @@ export default function OverviewTab({
           <div className="p-4 rounded flex items-center gap-3" style={{ backgroundColor: PALETTE.panel }}><BarChart3 size={18} color={PALETTE.crimson} /><div><p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "1.1rem" }}>{currentFirm.score}</p><p className="text-xs" style={{ color: PALETTE.textMuted }}>Score {currentFirm.name}</p></div></div>
         </div>
         <button onClick={() => setTab("cas")} className="mt-2 self-start px-4 py-2 rounded text-sm flex items-center gap-2" style={{ backgroundColor: PALETTE.gold, color: PALETTE.bg }}>Lancer le prochain cas <ChevronRight size={16} /></button>
+
+        <div className="p-4 rounded" style={{ backgroundColor: PALETTE.panel }}>
+          <p className="text-xs mb-3" style={{ color: PALETTE.textMuted }}>Votre réputation, par audience</p>
+          <div className="flex flex-col gap-3">
+            {AUDIENCES.map((a) => (
+              <div key={a.key}>
+                <div className="flex justify-between text-xs mb-1"><span>{a.label}</span><span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{reputation[a.key]}</span></div>
+                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: PALETTE.line }}><div className="h-full" style={{ width: `${reputation[a.key]}%`, backgroundColor: PALETTE.teal }} /></div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
