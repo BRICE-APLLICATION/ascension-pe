@@ -16,3 +16,11 @@ export function persistSave(state) {
     // stockage indisponible (navigation privée, quota atteint) : on ignore silencieusement
   }
 }
+
+export function clearSave() {
+  try {
+    window.localStorage.removeItem(SAVE_KEY);
+  } catch {
+    // stockage indisponible : rien à effacer
+  }
+}

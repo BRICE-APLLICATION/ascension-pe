@@ -17,7 +17,7 @@ import { outcomeFromRisk } from "./data/thesis.js";
 import { defaultRelationships } from "./data/relationships.js";
 import { generateCandidatePool, acquisitionSlotBonus } from "./data/candidates.js";
 import { getRankIndex, clamp, randInt } from "./lib/utils.js";
-import { loadSave, persistSave } from "./lib/storage.js";
+import { loadSave, persistSave, clearSave } from "./lib/storage.js";
 import { computeCareerProfile, computeEndgamePath } from "./lib/career.js";
 import { getGrossForEntry } from "./lib/compensation.js";
 
@@ -676,6 +676,15 @@ export default function App() {
 
   function reshuffleCards() { setRevisionCards(FORMULAS.map((_, i) => i).sort(() => Math.random() - 0.5).slice(0, 3)); }
 
+  // Recommencer une partie : efface la sauvegarde puis recharge la page pour repartir sur
+  // l'initialisation par défaut (écran de démarrage), plutôt que de réinitialiser à la main
+  // chaque morceau d'état React un par un.
+  function restartGame() {
+    if (!window.confirm("Effacer la sauvegarde actuelle et recommencer une nouvelle partie ? Cette action est irréversible.")) return;
+    clearSave();
+    window.location.reload();
+  }
+
   function confirmApplication(firmId) {
     const firm = firms.find((f) => f.id === firmId);
     const gap = firm.score - currentFirm.score;
@@ -955,7 +964,7 @@ export default function App() {
         {tab === "revision" && <RevisionTab revisionCards={revisionCards} reshuffleCards={reshuffleCards} />}
       </main>
 
-      <GlossaryFooter open={glossaryOpen} setOpen={setGlossaryOpen} />
+      <GlossaryFooter open={glossaryOpen} setOpen={setGlossaryOpen} restartGame={restartGame} />
     </div>
   );
 }
