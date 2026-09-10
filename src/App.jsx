@@ -981,7 +981,13 @@ export default function App() {
           />
         )}
 
-        {tab === "carriere" && <CareerTab playerName={playerName} year={year} careerHistory={careerHistory} grossTotal={grossTotal} netTotal={netTotal} endgamePath={endgamePath} />}
+        {tab === "carriere" && (
+          <CareerTab
+            playerName={playerName} year={year} quarter={quarter} careerHistory={careerHistory} grossTotal={grossTotal} netTotal={netTotal} endgamePath={endgamePath}
+            currentRoleLabel={isCeo ? "CEO" : currentFirmId === ownFirmId ? "Fondateur" : currentRank.name} currentFirmName={currentFirm.name}
+            portfolio={portfolio} reputation={reputation}
+          />
+        )}
 
         {tab === "marche" && (
           <MarketTab
