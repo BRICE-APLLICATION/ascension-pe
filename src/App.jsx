@@ -62,6 +62,9 @@ export default function App() {
   // Événement macro global — touche tout le marché à la fois, distinct des risques cachés propres
   // à chaque cible d'acquisition. Un seul événement actif à la fois, jamais permanent.
   const [macroEvent, setMacroEvent] = useState(null);
+  // Historique du score par firme — seul le nombre instantané était visible jusqu'ici, ce qui
+  // rendait le dynamisme du marché difficile à percevoir sur la durée d'une carrière.
+  const [scoreHistoryByFirm, setScoreHistoryByFirm] = useState({});
   const [lastQuarterAt, setLastQuarterAt] = useState(() => Date.now());
   const [fundraiseResult, setFundraiseResult] = useState(null);
   const [negotiation, setNegotiation] = useState(null);
@@ -139,6 +142,19 @@ export default function App() {
     setExpandedCompanyId(null);
   }, [currentFirmId]);
 
+  // Amorce l'historique de score de la firme active dès qu'on l'a jamais suivie (nouvelle partie,
+  // ou premier trimestre passé dans une firme rejointe en cours de carrière) plutôt que de laisser
+  // le graphique vide tant qu'un premier trimestre n'a pas été joué depuis cette firme.
+  useEffect(() => {
+    if (!loaded) return;
+    setScoreHistoryByFirm((prev) => {
+      if (prev[currentFirmId]?.length) return prev;
+      const score = firms.find((f) => f.id === currentFirmId)?.score;
+      if (score === undefined) return prev;
+      return { ...prev, [currentFirmId]: [{ quarter, score }] };
+    });
+  }, [loaded, currentFirmId]);
+
   const [viewingOfferId, setViewingOfferId] = useState(null);
   const [applicationResult, setApplicationResult] = useState(null);
 
@@ -185,6 +201,7 @@ export default function App() {
       if (s.lastFundraiseQuarter !== undefined) setLastFundraiseQuarter(s.lastFundraiseQuarter);
       if (s.lastPartnershipQuarter !== undefined) setLastPartnershipQuarter(s.lastPartnershipQuarter);
       if (s.macroEvent !== undefined) setMacroEvent(s.macroEvent);
+      if (s.scoreHistoryByFirm) setScoreHistoryByFirm(s.scoreHistoryByFirm);
       if (s.lastQuarterAt !== undefined) setLastQuarterAt(s.lastQuarterAt);
       if (s.recruitsByFirm) setRecruitsByFirm(s.recruitsByFirm);
       if (s.hiredCandidateIdsByFirm) setHiredCandidateIdsByFirm(s.hiredCandidateIdsByFirm);
@@ -194,8 +211,8 @@ export default function App() {
 
   useEffect(() => {
     if (!loaded || !playerName) return;
-    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, lastPartnershipQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm, macroEvent });
-  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, lastPartnershipQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm, macroEvent]);
+    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, lastPartnershipQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm, macroEvent, scoreHistoryByFirm });
+  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, lastPartnershipQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm, macroEvent, scoreHistoryByFirm]);
 
   const rankIndex = getRankIndex(xp);
   const currentRank = RANKS[rankIndex];
@@ -585,6 +602,10 @@ export default function App() {
       }
     }
     setFirms(working);
+    const newFirmScore = working.find((f) => f.id === currentFirmId)?.score;
+    if (newFirmScore !== undefined) {
+      setScoreHistoryByFirm((prev) => ({ ...prev, [currentFirmId]: [...(prev[currentFirmId] || []), { quarter: q, score: newFirmScore }].slice(-60) }));
+    }
 
     // Une partie de rémunération négociée en actions (voir la négociation salariale) suit ensuite
     // la performance réelle de la firme concernée — cours de bourse si elle est cotée, score sinon.
@@ -963,7 +984,11 @@ export default function App() {
         {tab === "carriere" && <CareerTab playerName={playerName} year={year} careerHistory={careerHistory} grossTotal={grossTotal} netTotal={netTotal} endgamePath={endgamePath} />}
 
         {tab === "marche" && (
-          <MarketTab marketSorted={marketSorted} currentFirm={currentFirm} currentFirmId={currentFirmId} rankIndex={rankIndex} goPublic={goPublic} launchTakeover={launchTakeover} ceoFirmId={ceoFirmId} ownFirmId={ownFirmId} playerName={playerName} macroEvent={macroEvent ? { ...macroEvent, label: MACRO_EVENTS[macroEvent.type].label } : null} />
+          <MarketTab
+            marketSorted={marketSorted} currentFirm={currentFirm} currentFirmId={currentFirmId} rankIndex={rankIndex} goPublic={goPublic} launchTakeover={launchTakeover} ceoFirmId={ceoFirmId} ownFirmId={ownFirmId} playerName={playerName}
+            macroEvent={macroEvent ? { ...macroEvent, label: MACRO_EVENTS[macroEvent.type].label } : null}
+            scoreHistory={scoreHistoryByFirm[currentFirmId] ?? []}
+          />
         )}
 
         {tab === "emploi" && negotiation && (

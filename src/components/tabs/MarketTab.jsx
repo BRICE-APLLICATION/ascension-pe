@@ -1,10 +1,11 @@
 import { Building2 } from "lucide-react";
 import { PALETTE } from "../../data/palette.js";
 import { CEO_NAMES } from "../../data/firms.js";
+import ScoreChart from "../ScoreChart.jsx";
 
 const MACRO_COLORS = { recession: PALETTE.crimson, boom: PALETTE.teal, rateHike: PALETTE.gold };
 
-export default function MarketTab({ marketSorted, currentFirm, currentFirmId, rankIndex, goPublic, launchTakeover, ceoFirmId, ownFirmId, playerName, macroEvent }) {
+export default function MarketTab({ marketSorted, currentFirm, currentFirmId, rankIndex, goPublic, launchTakeover, ceoFirmId, ownFirmId, playerName, macroEvent, scoreHistory }) {
   return (
     <div className="max-w-2xl">
       <p className="text-xs mb-4" style={{ color: PALETTE.textMuted }}>{marketSorted.length} fonds actifs sur le marché canadien du PE.</p>
@@ -13,6 +14,7 @@ export default function MarketTab({ marketSorted, currentFirm, currentFirmId, ra
           {macroEvent.label} en cours — encore {macroEvent.remainingQuarters} trimestre{macroEvent.remainingQuarters > 1 ? "s" : ""} avant un retour à la normale.
         </div>
       )}
+      <ScoreChart history={scoreHistory} firmName={currentFirm.name} />
       {currentFirm.score >= 75 && !currentFirm.public && <button onClick={goPublic} className="mb-4 px-4 py-2 rounded text-sm" style={{ backgroundColor: PALETTE.gold, color: PALETTE.bg }}>Introduire {currentFirm.name} en bourse</button>}
       <div className="flex flex-col gap-3">
         {marketSorted.map((f, i) => (
