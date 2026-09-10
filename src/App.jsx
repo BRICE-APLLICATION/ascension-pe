@@ -312,6 +312,19 @@ export default function App() {
     setNews((n) => [`T${quarter} — ${pos.name} réalise une acquisition complémentaire (bolt-on) pour ${cost} M$, renforçant sa création de valeur.`, ...n]);
   }
 
+  // Cession / Exit — réalise le gain ou la perte au moment de la vente (value - invested) plutôt
+  // que de le laisser courir indéfiniment sur une valeur qui n'évolue plus une fois sortie.
+  function sellPosition(portfolioIndex) {
+    const pos = portfolio[portfolioIndex];
+    if (!pos || !isDirectorial) return;
+    const gain = +(pos.value - pos.invested).toFixed(1);
+    setDryPowder((d) => +(d + pos.value).toFixed(1));
+    setPortfolio((p) => p.filter((_, i) => i !== portfolioIndex));
+    const scoreDelta = clamp(Math.round(gain / 8), -4, 6);
+    setFirms((prev) => prev.map((f) => (f.id === currentFirmId ? { ...f, score: clamp(f.score + scoreDelta, 5, 98) } : f)));
+    setNews((n) => [`T${quarter} — Cession de ${pos.name} : ${gain >= 0 ? "plus-value" : "moins-value"} de ${Math.abs(gain)} M$ réalisée, ${pos.value} M$ reversés au capital disponible.`, ...n]);
+  }
+
   // Priorité 1 — risques cachés post-acquisition : une bonne proposition réduit la probabilité
   // qu'un risque caché se matérialise, mais ne l'annule jamais ; une structure agressive l'augmente.
   function rollHiddenRisk(company, option) {
@@ -874,7 +887,7 @@ export default function App() {
             expandedCompanyId={expandedCompanyId} setExpandedCompanyId={setExpandedCompanyId}
             proposalChoices={proposalChoices} pickProposal={pickProposal} passOn={passOn}
             selectedProposal={selectedProposal} bankRejections={bankRejections} requestFinancing={requestFinancing}
-            portfolio={portfolio} quarter={quarter} dryPowder={dryPowder} addBoltOn={addBoltOn}
+            portfolio={portfolio} quarter={quarter} dryPowder={dryPowder} addBoltOn={addBoltOn} sellPosition={sellPosition}
             ddResults={ddResults} investigateDD={investigateDD}
             selectedThesis={selectedThesis} chooseThesis={chooseThesis}
           />

@@ -10,7 +10,7 @@ const MAX_ADD_ONS = 2;
 export default function AcquisitionsTab({
   isDirectorial, staff, acquisitionSlots, expandedCompanyId, setExpandedCompanyId,
   proposalChoices, pickProposal, passOn, selectedProposal, bankRejections, requestFinancing,
-  portfolio, quarter, dryPowder, addBoltOn, ddResults, investigateDD, selectedThesis, chooseThesis,
+  portfolio, quarter, dryPowder, addBoltOn, sellPosition, ddResults, investigateDD, selectedThesis, chooseThesis,
 }) {
   return (
     <div>
@@ -163,9 +163,14 @@ export default function AcquisitionsTab({
                 const maxedOut = addOnsCount >= MAX_ADD_ONS;
                 const disabled = pending || maxedOut || cost > dryPowder;
                 return (
-                  <button onClick={() => addBoltOn(i)} disabled={disabled} className="mt-2 px-2 py-1 rounded text-xs" style={{ backgroundColor: PALETTE.panelAlt, color: disabled ? PALETTE.textMuted : PALETTE.gold, opacity: disabled ? 0.6 : 1 }}>
-                    {maxedOut ? "Buy-and-build complet" : `Acquisition complémentaire (bolt-on) — ${cost} M$`}
-                  </button>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <button onClick={() => addBoltOn(i)} disabled={disabled} className="px-2 py-1 rounded text-xs" style={{ backgroundColor: PALETTE.panelAlt, color: disabled ? PALETTE.textMuted : PALETTE.gold, opacity: disabled ? 0.6 : 1 }}>
+                      {maxedOut ? "Buy-and-build complet" : `Acquisition complémentaire (bolt-on) — ${cost} M$`}
+                    </button>
+                    <button onClick={() => sellPosition(i)} className="px-2 py-1 rounded text-xs" style={{ backgroundColor: PALETTE.panelAlt, color: PALETTE.textPrimary }}>
+                      Vendre (Cession) — {p.value} M$
+                    </button>
+                  </div>
                 );
               })()}
             </div>
