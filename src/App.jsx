@@ -16,6 +16,7 @@ import { DD_BUDGET, investigateCategory } from "./data/duediligence.js";
 import { outcomeFromRisk } from "./data/thesis.js";
 import { defaultRelationships } from "./data/relationships.js";
 import { generateCandidatePool, acquisitionSlotBonus } from "./data/candidates.js";
+import { MACRO_EVENTS, MACRO_EVENT_KEYS, MACRO_EVENT_CHANCE, MACRO_EVENT_DURATION } from "./data/macro.js";
 import { getRankIndex, clamp, randInt } from "./lib/utils.js";
 import { loadSave, persistSave, clearSave } from "./lib/storage.js";
 import { computeCareerProfile, computeEndgamePath } from "./lib/career.js";
@@ -58,6 +59,9 @@ export default function App() {
   const [ownFirmId, setOwnFirmId] = useState(null);
   const [lastFundraiseQuarter, setLastFundraiseQuarter] = useState(-99);
   const [lastPartnershipQuarter, setLastPartnershipQuarter] = useState(-99);
+  // Événement macro global — touche tout le marché à la fois, distinct des risques cachés propres
+  // à chaque cible d'acquisition. Un seul événement actif à la fois, jamais permanent.
+  const [macroEvent, setMacroEvent] = useState(null);
   const [lastQuarterAt, setLastQuarterAt] = useState(() => Date.now());
   const [fundraiseResult, setFundraiseResult] = useState(null);
   const [negotiation, setNegotiation] = useState(null);
@@ -180,6 +184,7 @@ export default function App() {
       if (s.ownFirmId !== undefined) setOwnFirmId(s.ownFirmId);
       if (s.lastFundraiseQuarter !== undefined) setLastFundraiseQuarter(s.lastFundraiseQuarter);
       if (s.lastPartnershipQuarter !== undefined) setLastPartnershipQuarter(s.lastPartnershipQuarter);
+      if (s.macroEvent !== undefined) setMacroEvent(s.macroEvent);
       if (s.lastQuarterAt !== undefined) setLastQuarterAt(s.lastQuarterAt);
       if (s.recruitsByFirm) setRecruitsByFirm(s.recruitsByFirm);
       if (s.hiredCandidateIdsByFirm) setHiredCandidateIdsByFirm(s.hiredCandidateIdsByFirm);
@@ -189,8 +194,8 @@ export default function App() {
 
   useEffect(() => {
     if (!loaded || !playerName) return;
-    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, lastPartnershipQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm });
-  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, lastPartnershipQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm]);
+    persistSave({ playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, lastPartnershipQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm, macroEvent });
+  }, [loaded, playerName, xp, dealsReviewed, firms, currentFirmId, year, quarter, careerHistory, loggedRankIndex, news, opaWarned, mail, acquisitionSlotsByFirm, investedIdsByFirm, portfolioByFirm, dryPowderByFirm, loanLogByFirm, scenarioChoices, proposalChoicesByFirm, skills, reputation, ceoFirmId, lastCeoOfferQuarter, ownFirmId, lastFundraiseQuarter, lastPartnershipQuarter, ddResultsByFirm, relationships, lastQuarterAt, recruitsByFirm, hiredCandidateIdsByFirm, macroEvent]);
 
   const rankIndex = getRankIndex(xp);
   const currentRank = RANKS[rankIndex];
@@ -369,8 +374,12 @@ export default function App() {
 
     // La réputation Banques et le track record de la firme (son score) desserrent ou resserrent
     // légèrement le plafond de levier officiel de chaque prêteur — une PE tout juste fondée, sans
-    // historique, se voit donc naturellement plus scrutée qu'un fonds établi.
-    const effectiveMaxLeverage = clamp(bank.maxLeverage + (reputation.banks - 50) / 500 + (currentFirm.score - 50) / 500, 0.1, 0.98);
+    // historique, se voit donc naturellement plus scrutée qu'un fonds établi. Un événement macro de
+    // hausse des taux resserre temporairement ce plafond et renchérit le taux, pour tout le marché.
+    const activeMacro = macroEvent ? MACRO_EVENTS[macroEvent.type] : null;
+    const macroLeverageDelta = activeMacro?.leverageDelta ?? 0;
+    const macroRate = bank.rate + (activeMacro?.rateDelta ?? 0);
+    const effectiveMaxLeverage = clamp(bank.maxLeverage + macroLeverageDelta + (reputation.banks - 50) / 500 + (currentFirm.score - 50) / 500, 0.1, 0.98);
     if (option.leverage > effectiveMaxLeverage) {
       setBankRejections((r) => ({ ...r, [company.id]: [...(r[company.id] || []), bankId] }));
       return;
@@ -380,7 +389,7 @@ export default function App() {
     const equity = +(price * (1 - option.leverage)).toFixed(1);
     const debt = +(price * option.leverage).toFixed(1);
     if (equity > dryPowder) {
-      setLoanLog((l) => [{ id: `loan-${Date.now()}`, quarter, bankId: bank.id, bankName: bank.name, rate: bank.rate, amount: debt, purpose: company.name, rejected: true, reason: "capital disponible insuffisant" }, ...l]);
+      setLoanLog((l) => [{ id: `loan-${Date.now()}`, quarter, bankId: bank.id, bankName: bank.name, rate: macroRate, amount: debt, purpose: company.name, rejected: true, reason: "capital disponible insuffisant" }, ...l]);
       setSelectedProposal((p) => { const n = { ...p }; delete n[company.id]; return n; });
       setBankRejections((r) => { const n = { ...r }; delete n[company.id]; return n; });
       return;
@@ -393,7 +402,7 @@ export default function App() {
       const oldDebt = f.corporateDebt || 0;
       const oldRate = f.debtWeightedRate || 0;
       const newDebt = +(oldDebt + debt).toFixed(1);
-      const newRate = newDebt > 0 ? (oldDebt * oldRate + debt * bank.rate) / newDebt : 0;
+      const newRate = newDebt > 0 ? (oldDebt * oldRate + debt * macroRate) / newDebt : 0;
       return { ...f, corporateDebt: newDebt, debtWeightedRate: newRate, score: clamp(f.score + (option.correct ? 4 : -3), 5, 98) };
     }));
     const pendingRisk = rollHiddenRisk(company, option);
@@ -405,7 +414,7 @@ export default function App() {
     setPortfolio((p) => [...p, { id: company.id, name: company.name, invested: price, value: price, ebitda: company.ebitda, quarterAcquired: quarter, pendingRisk, resolvedRisk: null, bankName: bank.name, thesis, thesisOutcome }]);
     setInvestedIds((ids) => [...ids, company.id]);
     setDealsReviewed((v) => v + 1);
-    setLoanLog((l) => [{ id: `loan-${Date.now()}`, quarter, bankId: bank.id, bankName: bank.name, rate: bank.rate, amount: debt, purpose: company.name, rejected: false }, ...l]);
+    setLoanLog((l) => [{ id: `loan-${Date.now()}`, quarter, bankId: bank.id, bankName: bank.name, rate: macroRate, amount: debt, purpose: company.name, rejected: false }, ...l]);
     setReputation((r) => ({
       ...r,
       banks: clamp(r.banks + (option.correct ? 2 : 1), 0, 100),
@@ -485,6 +494,9 @@ export default function App() {
   function advanceQuarter() {
     const q = quarter + 1;
     setQuarter(q);
+    // Événement macro actif ce trimestre (avant décrément/tirage pour le prochain) : c'est celui
+    // dont l'effet s'applique à la mise à jour des firmes ci-dessous.
+    const currentMacro = macroEvent ? MACRO_EVENTS[macroEvent.type] : null;
     let covenantBreach = null;
     let working = firms.map((f) => {
       if (f.id === currentFirmId) {
@@ -494,12 +506,13 @@ export default function App() {
         // facilement, une firme qui score mal voit son AUM s'éroder (rachats/non-réengagements).
         const lpCommitted = f.lpCommitted || 0;
         updated.lpCommitted = Math.max(50, Math.round(lpCommitted * (1 + (f.score - 50) / 2000)));
-        const feeRevenue = +(lpCommitted * 0.02 / 4).toFixed(1);
+        const feeRevenue = +(lpCommitted * 0.02 / 4 * (currentMacro?.feeMultiplier ?? 1)).toFixed(1);
         const opex = +(f.employees * 0.05).toFixed(1);
         const debt = f.corporateDebt || 0;
         const interestExpense = +(debt * (f.debtWeightedRate || 0) / 4).toFixed(1);
         updated.cash = Math.max(0, +((f.cash || 0) + feeRevenue - opex - interestExpense).toFixed(1));
         updated.corporateDebt = debt;
+        if (currentMacro?.scoreDrift) updated.score = clamp(f.score + currentMacro.scoreDrift, 5, 98);
 
         // Priorité 5 — covenant : au-delà de 6,0x dette nette/EBITDA du portefeuille, la banque
         // impose un cash sweep forcé (une partie de la trésorerie rembourse la dette d'office)
@@ -513,11 +526,29 @@ export default function App() {
         }
         return updated;
       }
-      const updated = { ...f, score: clamp(f.score + randInt(-4, 4), 8, 96), employees: f.employees + randInt(0, 2) };
+      const updated = { ...f, score: clamp(f.score + randInt(-4, 4) + (currentMacro?.scoreDrift ?? 0), 8, 96), employees: f.employees + randInt(0, 2) };
       if (f.public) updated.stockPrice = Math.max(1, +(f.stockPrice * (1 + randInt(-8, 8) / 100)).toFixed(2));
       return updated;
     });
     const newsItems = [];
+
+    // L'événement macro suit son propre cycle de vie, indépendant des fusions/OPA : décrémenter
+    // celui en cours et l'éteindre à échéance, ou en tirer un nouveau seulement si aucun n'est actif
+    // — jamais deux à la fois, jamais permanent.
+    if (macroEvent) {
+      const remaining = macroEvent.remainingQuarters - 1;
+      if (remaining <= 0) {
+        newsItems.push(currentMacro.endNews(q));
+        setMacroEvent(null);
+      } else {
+        setMacroEvent({ ...macroEvent, remainingQuarters: remaining });
+      }
+    } else if (Math.random() < MACRO_EVENT_CHANCE) {
+      const type = MACRO_EVENT_KEYS[randInt(0, MACRO_EVENT_KEYS.length - 1)];
+      const duration = randInt(MACRO_EVENT_DURATION[0], MACRO_EVENT_DURATION[1]);
+      setMacroEvent({ type, remainingQuarters: duration, startedQuarter: q });
+      newsItems.push(MACRO_EVENTS[type].startNews(q));
+    }
     const rivals = working.filter((f) => f.id !== currentFirmId);
     const sorted = [...rivals].sort((a, b) => a.score - b.score);
     if (q % 2 === 0 && sorted.length >= 2) {
@@ -932,7 +963,7 @@ export default function App() {
         {tab === "carriere" && <CareerTab playerName={playerName} year={year} careerHistory={careerHistory} grossTotal={grossTotal} netTotal={netTotal} endgamePath={endgamePath} />}
 
         {tab === "marche" && (
-          <MarketTab marketSorted={marketSorted} currentFirm={currentFirm} currentFirmId={currentFirmId} rankIndex={rankIndex} goPublic={goPublic} launchTakeover={launchTakeover} ceoFirmId={ceoFirmId} ownFirmId={ownFirmId} playerName={playerName} />
+          <MarketTab marketSorted={marketSorted} currentFirm={currentFirm} currentFirmId={currentFirmId} rankIndex={rankIndex} goPublic={goPublic} launchTakeover={launchTakeover} ceoFirmId={ceoFirmId} ownFirmId={ownFirmId} playerName={playerName} macroEvent={macroEvent ? { ...macroEvent, label: MACRO_EVENTS[macroEvent.type].label } : null} />
         )}
 
         {tab === "emploi" && negotiation && (
